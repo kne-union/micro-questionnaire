@@ -26,7 +26,7 @@ const App = createWithRemoteLoader({
 })(({ remoteModules, globalPreset }) => {
   const [Global, AfterUserLoginLayout, AfterAdminUserLoginLayout] = remoteModules;
   const baseUrl = '';
-  const systemName = 'questionnaire';
+  const systemName = 'Questionnaire';
   const isOidcClient = globalPreset.oidcMode === 'central';
 
   const adminNavigation = {

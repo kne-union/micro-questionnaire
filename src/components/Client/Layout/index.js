@@ -24,7 +24,7 @@ const Layout = createWithRemoteLoader({
             return (
               <SystemLayout
                 logo={{
-                  src: `${window.location.origin}${process.env.PUBLIC_URL || ''}/logo.svg`,
+                  src: `${String(window.runtimePublicUrl || window.PUBLIC_URL || process.env.PUBLIC_URL || '').replace(/\/+$/, '')}/logo.svg`,
                   alt: 'questionnaire'
                 }}
                 userInfo={Object.assign({}, userInfo, {
