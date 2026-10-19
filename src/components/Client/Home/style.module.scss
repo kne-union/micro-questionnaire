@@ -1,0 +1,48 @@
+@use '~@kne/responsive-utils/scss' as resp;
+
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.hero {
+  background: rgba(255, 255, 255, 0.44);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  padding: 22px 24px;
+}
+
+.lead {
+  margin: 0;
+  max-width: 640px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sectionTitleGap {
+  margin-bottom: 12px;
+}
+
+.sectionHint {
+  margin: 6px 0 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+@include resp.mobile-container {
+  .actions {
+    width: 100%;
+  }
+}

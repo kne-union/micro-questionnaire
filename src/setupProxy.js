@@ -8,4 +8,10 @@ module.exports = function (app) {
       changeOrigin: true
     })
   );
+  app.use(
+    createProxyMiddleware(path => path === '/oidc' || path.startsWith('/oidc/'), {
+      target: 'http://localhost:8060',
+      xfwd: true
+    })
+  );
 };

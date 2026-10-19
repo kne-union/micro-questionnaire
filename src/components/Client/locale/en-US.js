@@ -1,6 +1,26 @@
 export default {
   ClientAdminHome: 'Home',
+  ClientMenuAccount: 'Account',
+  ClientMenuLogout: 'Log out',
   ClientAdminSample: 'Sample',
-  ClientAdminHomeTitle: 'Client Admin Portal',
-  ClientAdminHomeDescription: 'Client admin portal placeholder home. Extend business modules here.'
+  QuestionnaireTemplateMenu: 'Templates',
+  QuestionnaireProjectMenu: 'Projects',
+  QuestionnaireResultMenu: 'Results',
+  ClientAdminHomeTitle: 'Questionnaire',
+  ClientAdminHomeDescription: 'Start a project from a default template, share the fill link, then come back for the results.',
+  ClientHomeDefaults: 'Default templates',
+  ClientHomeDefaultsHint: 'These templates are synced when the server starts. Create a project from one of them.',
+  ClientHomeUseTemplate: 'Create project',
+  ClientHomeRecent: 'Recent projects',
+  ClientHomeRecentEmpty: 'No projects yet. Pick a default template to start.',
+  ClientHomeViewProject: 'Open',
+  ClientHomeOpen: 'Open',
+  ClientHomeClosed: 'Closed',
+  ClientHomeGoProjects: 'Projects',
+  ClientHomeGoTemplates: 'Templates',
+  ClientHomeTemplateName: 'Template name',
+  ClientHomeTemplateDescription: 'Description',
+  ClientHomeProjectName: 'Project name',
+  ClientHomeProjectStatus: 'Status',
+  ClientHomeResponseCount: 'Responses'
 };

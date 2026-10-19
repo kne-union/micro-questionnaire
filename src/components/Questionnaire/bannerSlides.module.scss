@@ -1,0 +1,37 @@
+@use '~@kne/responsive-utils/scss' as resp;
+
+.wrap {
+  :global(.slick-dots) {
+    bottom: 10px;
+  }
+
+  :global(.slick-arrow) {
+    z-index: 2;
+    color: #fff;
+  }
+}
+
+.slide {
+  position: relative;
+  height: 200px;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    object-position: center;
+    border-radius: 16px;
+  }
+}
+
+@include resp.mobile-container {
+  .slide {
+    height: 160px;
+
+    img {
+      height: 160px;
+      border-radius: 12px;
+    }
+  }
+}

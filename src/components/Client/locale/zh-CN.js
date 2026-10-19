@@ -1,6 +1,26 @@
 export default {
   ClientAdminHome: '首页',
+  ClientMenuAccount: '账号',
+  ClientMenuLogout: '退出登录',
   ClientAdminSample: '示例模块',
-  ClientAdminHomeTitle: '客户管理门户',
-  ClientAdminHomeDescription: '这是客户管理门户占位首页，可在此扩展业务模块。'
+  QuestionnaireTemplateMenu: '问卷模版',
+  QuestionnaireProjectMenu: '问卷项目',
+  QuestionnaireResultMenu: '问卷结果',
+  ClientAdminHomeTitle: '问卷系统',
+  ClientAdminHomeDescription: '从一份默认模版开始项目，把填写链接发出去，再回来看结果。',
+  ClientHomeDefaults: '默认模版',
+  ClientHomeDefaultsHint: '这些模版在服务启动时同步，可以直接用来创建项目。',
+  ClientHomeUseTemplate: '创建项目',
+  ClientHomeRecent: '最近的项目',
+  ClientHomeRecentEmpty: '还没有项目。选一个默认模版即可开始。',
+  ClientHomeViewProject: '查看',
+  ClientHomeOpen: '收集中',
+  ClientHomeClosed: '已关闭',
+  ClientHomeGoProjects: '问卷项目',
+  ClientHomeGoTemplates: '问卷模版',
+  ClientHomeTemplateName: '模版名称',
+  ClientHomeTemplateDescription: '说明',
+  ClientHomeProjectName: '项目名称',
+  ClientHomeProjectStatus: '状态',
+  ClientHomeResponseCount: '答卷数'
 };

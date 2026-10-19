@@ -39,7 +39,7 @@ bower_components
 build/Release
 
 # Dependency directories
-node_modules/
+node_modules
 prompts/
 jspm_packages/
 
@@ -131,3 +131,6 @@ build
 pnpm-lock.yaml
 package-lock.json
 .DS_Store
+data.db
+*.sqlite
+server/static/

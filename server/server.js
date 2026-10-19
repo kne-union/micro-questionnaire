@@ -24,7 +24,7 @@ const options = {
 const createServer = () => {
   const userEnvSchema = require('./env.schema.json');
   fastify.register(fastifyEnv, {
-    dotenv: true,
+    dotenv: { path: path.join(__dirname, '.env') },
     schema: {
       type: 'object',
       properties: Object.assign({}, userEnvSchema.properties, {
@@ -62,6 +62,7 @@ const createServer = () => {
       fastify.register(require('@kne/fastify-account'), {
         isTest: fastify.config.IS_TEST,
         prefix: `${options.prefix}`,
+        getUserAuthenticate: () => fastify.oidc.authenticate.user,
         sendMessage: async ({ name, type, messageType, props }) => {
           if (messageType === 1 && type === 0) {
             await fastify.message.services.sendMessage({
@@ -110,6 +111,12 @@ const createServer = () => {
         task: {
         }
       });
+
+      fastify.register(require('@kne/fastify-oidc'), {
+        selfClient: { clientName: 'questionnaire' },
+        origin: fastify.config.ORIGIN,
+        keyEncryptionSecret: fastify.config.OIDC_KEY_SECRET
+      });
     })
   );
 
@@ -125,6 +132,8 @@ const createServer = () => {
 
   fastify.register(
     require('fastify-plugin')(async fastify => {
+      await fastify.register(require('@kne/fastify-shorten'));
+
       fastify.register(require('@kne/fastify-namespace'), {
         options,
         name: options.name,

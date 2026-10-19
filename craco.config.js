@@ -4,6 +4,7 @@ const aliasConfig = require("./webstorm.webpack.config");
 process.env.CI = false;
 
 module.exports = {
+    reactScriptsVersion: '@kne/react-scripts',
     webpack: {
         alias: aliasConfig.resolve.alias, configure: (webpackConfig) => {
             const definePlugin = webpackConfig.plugins.find((plugin) => plugin.constructor.name === "DefinePlugin");

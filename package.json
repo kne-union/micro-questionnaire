@@ -1,6 +1,6 @@
 {
   "name": "questionnaire",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "问卷系统",
   "scripts": {
     "init": "node scripts/post-init.js && npm run init-server && husky && npx @kne/npm-tools deployPrompts fastify-project",
