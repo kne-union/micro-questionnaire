@@ -13,7 +13,6 @@ export default {
   ClientHomeUseTemplate: 'Create project',
   ClientHomeRecent: 'Recent projects',
   ClientHomeRecentEmpty: 'No projects yet. Pick a template to start.',
-  ClientHomeViewProject: 'Open',
   ClientHomeOpen: 'Open',
   ClientHomeClosed: 'Closed',
   ClientHomeGoProjects: 'Projects',

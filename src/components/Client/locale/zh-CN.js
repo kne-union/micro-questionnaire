@@ -13,7 +13,6 @@ export default {
   ClientHomeUseTemplate: '创建项目',
   ClientHomeRecent: '最近的项目',
   ClientHomeRecentEmpty: '还没有项目。选一个模版即可开始。',
-  ClientHomeViewProject: '查看',
   ClientHomeOpen: '收集中',
   ClientHomeClosed: '已关闭',
   ClientHomeGoProjects: '问卷项目',
