@@ -8,8 +8,9 @@ import ProjectAppearance from '../../pages/ProjectAppearance';
 import withLocale from '@components/Questionnaire/withLocale';
 import QuestionnaireFormInner from '@components/Questionnaire/QuestionnaireFormInner';
 import { renderListCards } from '@components/Questionnaire/listCards';
+import { withPublicUrl } from '../../commons/publicUrl';
 
-const fillUrl = code => `${window.location.origin}/q/${code}`;
+const fillUrl = code => `${window.location.origin}${withPublicUrl(`/q/${code}`)}`;
 
 const imageAccept = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 

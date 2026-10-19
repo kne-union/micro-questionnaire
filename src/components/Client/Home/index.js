@@ -7,8 +7,6 @@ import withLocale from '../withLocale';
 import { renderListCards } from '@components/Questionnaire/listCards';
 import style from './style.module.scss';
 
-const TEMPLATE_ORDER = ['event-registration', 'satisfaction', 'meeting-feedback', 'requirement'];
-
 const Home = createWithRemoteLoader({
   modules: ['components-admin:BizUnit', 'components-admin:BizUnit@TablePageRender', 'components-core:Global@usePreset']
 })(
@@ -55,14 +53,9 @@ const Home = createWithRemoteLoader({
                 list: {
                   loader: async () => {
                     const { data: resData } = await ajax(
-                      Object.assign({}, apis.questionnaire.templateList, { params: { perPage: 50, currentPage: 1 } })
+                      Object.assign({}, apis.questionnaire.templateList, { params: { perPage: 4, currentPage: 1 } })
                     );
-                    const pageData =
-                      resData.code === 0
-                        ? (resData.data?.pageData || [])
-                            .filter(item => item.builtinKey)
-                            .sort((a, b) => TEMPLATE_ORDER.indexOf(a.builtinKey) - TEMPLATE_ORDER.indexOf(b.builtinKey))
-                        : [];
+                    const pageData = resData.code === 0 ? resData.data?.pageData || [] : [];
                     return { pageData, totalCount: pageData.length };
                   }
                 }
