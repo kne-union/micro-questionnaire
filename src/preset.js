@@ -29,7 +29,7 @@ const ensureBootMask = () => {
     const style = document.createElement('style');
     style.id = 'app-boot-style';
     style.textContent =
-      '#app-boot{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#f6f7f9}#app-boot img{width:72px;height:72px}#app-boot-name{font-size:16px;line-height:24px;font-weight:500;color:rgba(0,0,0,.88)}';
+      '#app-boot{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#f6f7f9}#app-boot img{width:72px;height:72px;border-radius:22%;overflow:hidden}#app-boot-name{font-size:16px;line-height:24px;font-weight:500;color:rgba(0,0,0,.88)}';
     document.head.appendChild(style);
   }
   let mask = document.getElementById('app-boot');
