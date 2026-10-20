@@ -1,20 +1,39 @@
+import { useState } from 'react';
 import { createWithRemoteLoader } from '@kne/remote-loader';
 import { Page, useIsMobile, useScrollElement } from '@kne/system-layout';
-import { Button } from 'antd';
+import { App, Button } from 'antd';
 import { useIntl } from '@kne/react-intl';
 import { useNavigate } from 'react-router-dom';
 import withLocale from '../withLocale';
+import withQuestionnaireLocale from '@components/Questionnaire/withLocale';
 import { renderListCards } from '@components/Questionnaire/listCards';
+import { ProjectCreateForm } from '@components/QuestionnaireProject';
+import useProjectActions from '@components/QuestionnaireProject/useProjectActions';
 import style from './style.module.scss';
 
 const Home = createWithRemoteLoader({
-  modules: ['components-admin:BizUnit', 'components-admin:BizUnit@TablePageRender', 'components-core:Global@usePreset']
+  modules: ['components-admin:BizUnit', 'components-admin:BizUnit@TablePageRender', 'components-core:Global@usePreset', 'components-core:FormInfo', 'components-core:Modal@useModal']
 })(
-  withLocale(({ remoteModules }) => {
-    const [BizUnit, TablePageRender, usePreset] = remoteModules;
+  withLocale(withQuestionnaireLocale(({ remoteModules }) => {
+    const [BizUnit, TablePageRender, usePreset, FormInfo, useModal] = remoteModules;
     const { apis, ajax } = usePreset();
     const { formatMessage } = useIntl();
+    const formModal = FormInfo.useFormModal();
+    const modal = useModal();
+    const { message } = App.useApp();
     const navigate = useNavigate();
+    const [projectListKey, setProjectListKey] = useState(0);
+    const { getActionList } = useProjectActions({
+      ajax,
+      apis,
+      formModal,
+      modal,
+      message,
+      formatMessage,
+      navigate,
+      onChanged: () => setProjectListKey(key => key + 1),
+      renderCreateForm: onAddTemplate => <ProjectCreateForm FormInfo={FormInfo} apis={apis} formatMessage={formatMessage} onAddTemplate={onAddTemplate} />
+    });
     const getScrollElement = useScrollElement();
     const isMobile = useIsMobile();
     const tableProps = {
@@ -99,6 +118,7 @@ const Home = createWithRemoteLoader({
           <section>
             <h2 className={`${style.sectionTitle} ${style.sectionTitleGap}`}>{formatMessage({ id: 'ClientHomeRecent' })}</h2>
             <BizUnit
+              key={projectListKey}
               isNext
               name="questionnaire-home-projects"
               allowKeywordSearch={false}
@@ -135,14 +155,7 @@ const Home = createWithRemoteLoader({
                   })
                 }
               ]}
-              getActionList={({ data, ...actionProps }) => [
-                {
-                  ...actionProps,
-                  data,
-                  children: formatMessage({ id: 'ClientHomeViewProject' }),
-                  onClick: () => navigate(`/project/${data.id}/results`)
-                }
-              ]}
+              getActionList={getActionList}
               options={{
                 bizName: formatMessage({ id: 'ClientHomeRecent' }),
                 tableProps
@@ -154,7 +167,7 @@ const Home = createWithRemoteLoader({
         </div>
       </Page>
     );
-  })
+  }))
 );
 
 export default Home;
