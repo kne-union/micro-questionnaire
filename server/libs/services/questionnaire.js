@@ -8,6 +8,8 @@ const { generateQuestionnaireSchema } = require('../utils/questionnaire-ai-gener
 const { DEFAULT_TEMPLATES } = require('../utils/default-templates');
 
 const TOKEN_TYPE = 'questionnaire-project';
+const INVITE_TOKEN_TYPE = 'questionnaire-invite';
+const WEBHOOK_TIMEOUT = 15000;
 const SYSTEM_USER_ID = '';
 const PROJECT_LANGUAGES = ['zh-CN', 'en-US', 'both'];
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
@@ -441,7 +443,67 @@ module.exports = fp(async (fastify, options) => {
     };
   };
 
-  const getProjectByCode = async code => {
+  const formatInvite = row => {
+    const data = plain(row);
+    return {
+      id: String(data.id),
+      projectId: String(data.projectId),
+      name: data.name || '',
+      email: data.email || '',
+      phone: data.phone || '',
+      externalId: data.externalId || '',
+      expiresAt: data.expiresAt || null,
+      code: data.code || '',
+      path: data.code ? `/q/${data.code}` : '',
+      status: data.status,
+      submittedAt: data.submittedAt || null,
+      webhookStatus: data.webhookStatus || null,
+      createdAt: data.createdAt
+    };
+  };
+
+  /** 为指定填写人生成独立短码；提交后带答卷回调 webhook */
+  const createInvite = async (userInfo, { projectId, name, email, phone, externalId, webhook, expiresAt }) => {
+    const project = await requireOwnedProject(userInfo, projectId);
+    if (project.status !== 'open') {
+      throw new Error('问卷已关闭');
+    }
+    if (webhook && !/^https?:\/\//i.test(String(webhook))) {
+      throw new Error('webhook 须为 http(s) 地址');
+    }
+    const expires = expiresAt ? new Date(expiresAt) : null;
+    if (expires && (Number.isNaN(expires.getTime()) || expires.getTime() <= Date.now())) {
+      throw new Error('过期时间不正确');
+    }
+    const shorten = fastify.shorten?.services;
+    if (!shorten?.sign) {
+      throw new Error('短链服务未就绪');
+    }
+    const row = await models.questionnaireInvite.create({
+      userId: userInfo.id,
+      projectId: String(project.id),
+      name: String(name || '').trim(),
+      email: String(email || '').trim(),
+      phone: String(phone || '').trim(),
+      externalId: externalId == null ? null : String(externalId),
+      webhook: webhook || null,
+      expiresAt: expires
+    });
+    row.code = await shorten.sign(JSON.stringify({ type: INVITE_TOKEN_TYPE, inviteId: String(row.id) }), expires ? expires.getTime() : undefined);
+    await row.save();
+    return formatInvite(row);
+  };
+
+  const getInviteDetail = async (userInfo, { id }) => {
+    const row = await models.questionnaireInvite.findOne({ where: Object.assign({ id }, ownerWhere(userInfo)) });
+    if (!row) {
+      throw new Error('邀请不存在');
+    }
+    return formatInvite(row);
+  };
+
+  /** 解析填写短码：项目码返回 { project }，邀请码返回 { project, invite } */
+  const resolveCode = async code => {
     const shorten = fastify.shorten?.services;
     if (!shorten?.decode) {
       throw new Error('短链服务未就绪');
@@ -452,14 +514,57 @@ module.exports = fp(async (fastify, options) => {
     } catch (error) {
       throw new Error('问卷链接无效');
     }
+    if (payload?.type === INVITE_TOKEN_TYPE && payload.inviteId) {
+      const invite = await models.questionnaireInvite.findByPk(payload.inviteId);
+      if (!invite) {
+        throw new Error('问卷链接无效');
+      }
+      if (invite.expiresAt && new Date(invite.expiresAt).getTime() <= Date.now()) {
+        throw new Error('问卷链接已过期');
+      }
+      const project = await models.questionnaireProject.findByPk(invite.projectId);
+      if (!project) {
+        throw new Error('问卷不存在');
+      }
+      return { project, invite };
+    }
     if (!payload || payload.type !== TOKEN_TYPE || !payload.projectId) {
       throw new Error('问卷链接无效');
     }
-    const row = await models.questionnaireProject.findByPk(payload.projectId);
-    if (!row) {
+    const project = await models.questionnaireProject.findByPk(payload.projectId);
+    if (!project) {
       throw new Error('问卷不存在');
     }
-    return row;
+    return { project, invite: null };
+  };
+
+  const notifyWebhook = async ({ invite, project, response }) => {
+    if (!invite.webhook) {
+      return;
+    }
+    try {
+      const res = await fetch(invite.webhook, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          event: 'questionnaire.submitted',
+          invite: formatInvite(invite),
+          project: pick(formatProject(project), ['id', 'name', 'description', 'schema', 'language']),
+          response: formatResponse(response)
+        }),
+        signal: AbortSignal.timeout(WEBHOOK_TIMEOUT)
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+      }
+      invite.webhookStatus = 'succeeded';
+      invite.webhookError = null;
+    } catch (error) {
+      fastify.log.error({ err: error, inviteId: String(invite.id) }, 'questionnaire webhook failed');
+      invite.webhookStatus = 'failed';
+      invite.webhookError = String(error?.message || error).slice(0, 1000);
+    }
+    await invite.save();
   };
 
   const withPublicFile = async image => {
@@ -479,29 +584,40 @@ module.exports = fp(async (fastify, options) => {
   };
 
   const getPublicDetail = async ({ code }) => {
-    const row = await getProjectByCode(code);
+    const { project: row, invite } = await resolveCode(code);
     const data = formatProject(row);
     const background = await withPublicFile(data.background);
     const banners = (await Promise.all((data.banners || []).map(withPublicFile))).filter(item => item && item.url);
     return Object.assign(pick(data, ['name', 'description', 'schema', 'status', 'language', 'themeColor']), {
       background,
-      banners
+      banners,
+      submitted: invite?.status === 'submitted'
     });
   };
 
   const submitPublic = async ({ code, answers }) => {
-    const row = await getProjectByCode(code);
+    const { project: row, invite } = await resolveCode(code);
     if (row.status !== 'open') {
       throw new Error('问卷已关闭');
+    }
+    if (invite?.status === 'submitted') {
+      throw new Error('问卷已提交，无需重复填写');
     }
     if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
       throw new Error('答卷格式不正确');
     }
-    await models.questionnaireResponse.create({
+    const response = await models.questionnaireResponse.create({
       projectId: row.id,
       answers,
       submittedAt: new Date()
     });
+    if (invite) {
+      invite.status = 'submitted';
+      invite.responseId = String(response.id);
+      invite.submittedAt = response.submittedAt;
+      await invite.save();
+      await notifyWebhook({ invite, project: row, response });
+    }
     return {};
   };
 
@@ -519,6 +635,8 @@ module.exports = fp(async (fastify, options) => {
     openProject,
     getResponseList,
     exportProject,
+    createInvite,
+    getInviteDetail,
     getPublicDetail,
     submitPublic
   };
