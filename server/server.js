@@ -122,7 +122,7 @@ const createServer = () => {
 
       fastify.register(require('@kne/fastify-oidc'), {
         selfClient: { clientName: 'Questionnaire' },
-        origin: fastify.config.ORIGIN || 'http://localhost:3060',
+        origin: fastify.config.ORIGIN,
         keyEncryptionSecret: fastify.config.OIDC_KEY_SECRET
       });
     })
