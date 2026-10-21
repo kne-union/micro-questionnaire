@@ -1,6 +1,6 @@
 {
   "name": "@kne/micro-questionnaire",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "问卷系统",
   "scripts": {
     "init": "node scripts/post-init.js && npm run init-server && husky && npx @kne/npm-tools deployPrompts fastify-project",
@@ -67,7 +67,6 @@
     }
   },
   "devDependencies": {
-    "@craco/craco": "^7.1.0",
     "@kne/craco": "^7.1.4",
     "@kne/react-scripts": "^5.1.6",
     "@kne/modules-dev": "^2.4.17",
