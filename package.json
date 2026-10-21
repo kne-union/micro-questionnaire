@@ -67,7 +67,6 @@
     }
   },
   "devDependencies": {
-    "@craco/craco": "^7.1.0",
     "@kne/craco": "^7.1.4",
     "@kne/react-scripts": "^5.1.6",
     "@kne/modules-dev": "^2.4.17",
