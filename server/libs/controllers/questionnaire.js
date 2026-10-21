@@ -222,6 +222,39 @@ module.exports = fp(async (fastify, options) => {
     }
   );
 
+  fastify.post(
+    `${options.prefix}/questionnaire/project/invite`,
+    {
+      onRequest: userAuth,
+      schema: {
+        summary: '为指定填写人发起问卷（独立短码，提交后回调 webhook）',
+        body: {
+          type: 'object',
+          properties: {
+            projectId: idType,
+            name: { type: 'string' },
+            email: { type: 'string' },
+            phone: { type: 'string' },
+            externalId: idType,
+            webhook: { type: 'string', description: '提交后 POST { event, invite, project, response }；校验参数由调用方自行放在地址中' },
+            expiresAt: { type: 'string', description: '链接过期时间 ISO 字符串，不传则不过期' }
+          },
+          required: ['projectId']
+        }
+      }
+    },
+    async request => services.questionnaire.createInvite(request.userInfo, request.body)
+  );
+
+  fastify.get(
+    `${options.prefix}/questionnaire/project/invite/detail`,
+    {
+      onRequest: userAuth,
+      schema: { summary: '问卷邀请详情', querystring: { type: 'object', properties: { id: idType }, required: ['id'] } }
+    },
+    async request => services.questionnaire.getInviteDetail(request.userInfo, request.query)
+  );
+
   fastify.get(
     `${options.prefix}/questionnaire/public/detail`,
     {

@@ -159,6 +159,7 @@ const QuestionnaireFill = createWithRemoteLoader({
           return;
         }
         setContext(resData.data);
+        setDone(!!resData.data?.submitted);
         setFillLocale(resolveFillLocale(resData.data?.language, code));
       } catch (err) {
         setError(err?.message || formatMessage({ id: 'QuestionnaireFillLoadFailed' }));
