@@ -66,6 +66,34 @@ const useFooterNode = slot => {
   return node;
 };
 
+const blobToDataUrl = blob =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+// 文件在 OSS 时签名地址跨域，导出海报时 html-to-image 无法读取，经同源接口读成 data URL 再渲染
+const useImageDataUrl = (ajax, id) => {
+  const [dataUrl, setDataUrl] = useState(null);
+  useEffect(() => {
+    setDataUrl(null);
+    if (!id) {
+      return undefined;
+    }
+    let active = true;
+    ajax({ url: `/api/v1/static/file-id/${id}`, method: 'GET', responseType: 'blob', showError: false })
+      .then(({ data: blob }) => (blob instanceof Blob && blob.type.indexOf('image/') === 0 ? blobToDataUrl(blob) : null))
+      .then(result => active && setDataUrl(result))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [ajax, id]);
+  return dataUrl;
+};
+
 const ProjectShare = createWithRemoteLoader({
   modules: ['components-core:Global@usePreset']
 })(
@@ -125,8 +153,10 @@ const ProjectShare = createWithRemoteLoader({
 
     const preset = sizePresets.find(item => item.key === sizeKey);
     const size = preset ? { width: preset.width, height: preset.height } : customSize;
-    const backgroundSrc = appUrl.api(project?.background?.url);
-    const defaultBackgroundSrc = posterBackground?.url ? appUrl.api(posterBackground.url) : backgroundSrc;
+    const projectBackgroundData = useImageDataUrl(ajax, project?.background?.id);
+    const posterBackgroundData = useImageDataUrl(ajax, posterBackground?.id);
+    const backgroundSrc = projectBackgroundData || appUrl.api(project?.background?.url);
+    const defaultBackgroundSrc = posterBackground?.url ? posterBackgroundData || appUrl.api(posterBackground.url) : backgroundSrc;
     const aiPoster = posters.find(item => item.id === selectedId) || posters[0] || null;
 
     const posterHtml = useMemo(() => {
