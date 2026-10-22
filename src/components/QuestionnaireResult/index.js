@@ -6,6 +6,7 @@ import { useParams } from 'react-router-dom';
 import { useIntl } from '@kne/react-intl';
 import withLocale from '@components/Questionnaire/withLocale';
 import { renderListCards } from '@components/Questionnaire/listCards';
+import schemaLanguages from '../../commons/schemaLanguages';
 
 const flattenFields = schema =>
   (schema?.blocks || []).flatMap(block => {
@@ -46,13 +47,13 @@ const formatAnswer = (field, value) => {
 };
 
 const QuestionnaireResult = createWithRemoteLoader({
-  modules: ['components-admin:BizUnit', 'components-admin:BizUnit@TablePageRender', 'components-core:Global@usePreset', 'components-thirdparty:FormCreator@SchemaContent']
+  modules: ['components-admin:BizUnit', 'components-admin:BizUnit@TablePageRender', 'components-core:Global@usePreset', 'components-thirdparty:FormCreator@SchemaContent', 'components-thirdparty:FormCreator@localizeSchema']
 })(
   withLocale(({ remoteModules }) => {
-    const [BizUnit, TablePageRender, usePreset, SchemaContent] = remoteModules;
+    const [BizUnit, TablePageRender, usePreset, SchemaContent, localizeSchema] = remoteModules;
     const getScrollElement = useScrollElement();
     const isMobile = useIsMobile();
-    const { formatMessage } = useIntl();
+    const { formatMessage, locale } = useIntl();
     const { ajax, apis } = usePreset();
     const { message } = App.useApp();
     const { id } = useParams();
@@ -71,13 +72,13 @@ const QuestionnaireResult = createWithRemoteLoader({
       };
     }, [ajax, apis.questionnaire.projectDetail, id]);
 
-    const fields = useMemo(() => flattenFields(project?.schema), [project]);
+    const fields = useMemo(() => flattenFields(localizeSchema(project?.schema, locale, schemaLanguages)), [localizeSchema, project, locale]);
 
     const download = async () => {
       try {
         const { data } = await ajax(
           Object.assign({}, apis.questionnaire.projectExport, {
-            params: { id },
+            params: { id, locale },
             responseType: 'blob'
           })
         );
@@ -149,7 +150,7 @@ const QuestionnaireResult = createWithRemoteLoader({
           <Page title={project?.name || formatMessage({ id: 'QuestionnaireResultTitle' })} back>
             <TablePageRender {...renderProps} withPage={false} />
             <Modal open={!!current} title={formatMessage({ id: 'QuestionnaireResultView' })} footer={null} width={760} onCancel={() => setCurrent(null)} destroyOnClose>
-              {current && project ? <SchemaContent schema={project.schema} data={current.answers || {}} /> : null}
+              {current && project ? <SchemaContent locale={locale} languages={schemaLanguages} schema={project.schema} data={current.answers || {}} /> : null}
             </Modal>
           </Page>
         )}

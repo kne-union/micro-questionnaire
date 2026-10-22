@@ -9,10 +9,11 @@ import withLocale from '../withLocale';
 import { useIntl } from '@kne/react-intl';
 
 const Layout = createWithRemoteLoader({
-  modules: ['components-admin:Authenticate@AfterUserLogin', 'components-core:Global@GlobalValue', 'components-admin:Account@useLogout', 'components-admin:Account@Language']
+  modules: ['components-admin:Authenticate@AfterUserLogin', 'components-core:Global@GlobalValue', 'components-admin:Account@useLogout', 'components-admin:Account@Language', 'components-core:Global@usePreset']
 })(
   withLocale(({ remoteModules, baseUrl, children }) => {
-    const [AfterUserLogin, GlobalValue, useLogout, Language] = remoteModules;
+    const [AfterUserLogin, GlobalValue, useLogout, Language, usePreset] = remoteModules;
+    const { appUrl } = usePreset();
     const { formatMessage } = useIntl();
     const logout = useLogout();
 
@@ -24,7 +25,7 @@ const Layout = createWithRemoteLoader({
             return (
               <SystemLayout
                 logo={{
-                  src: `${String(window.runtimePublicUrl || window.PUBLIC_URL || process.env.PUBLIC_URL || '').replace(/\/+$/, '')}/logo.svg`,
+                  src: appUrl.asset('/logo.svg'),
                   alt: 'questionnaire'
                 }}
                 userInfo={Object.assign({}, userInfo, {

@@ -1,19 +1,78 @@
 const fp = require('fastify-plugin');
 const path = require('path');
 const pick = require('lodash/pick');
+const isEqual = require('lodash/isEqual');
 const dayjs = require('dayjs');
 const XLSX = require('xlsx');
 const { buildQuestionnaireColumns } = require('../utils/questionnaire-excel');
 const { generateQuestionnaireSchema } = require('../utils/questionnaire-ai-generator');
-const { DEFAULT_TEMPLATES } = require('../utils/default-templates');
+const { generatePosterHtml, generateAppearanceHtml } = require('../utils/poster-ai-generator');
+const { DEFAULT_TEMPLATES, pickText, localizeBuiltinTemplate, matchBuiltinKeys } = require('../utils/default-templates');
 
 const TOKEN_TYPE = 'questionnaire-project';
 const INVITE_TOKEN_TYPE = 'questionnaire-invite';
 const WEBHOOK_TIMEOUT = 15000;
 const SYSTEM_USER_ID = '';
 const PROJECT_LANGUAGES = ['zh-CN', 'en-US', 'both'];
+const TEMPLATE_LANGUAGES = ['zh-CN', 'en-US'];
+
+const decodeProjectText = value => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (text.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed;
+        }
+      } catch (error) {
+        // keep plain string
+      }
+    }
+    return value;
+  }
+  return value == null ? '' : String(value);
+};
+
+const encodeProjectText = (value, language, { required = false, label = '内容' } = {}) => {
+  if (language === 'both') {
+    const source = value && typeof value === 'object' ? value : {};
+    const zh = String(source['zh-CN'] || '').trim();
+    const en = String(source['en-US'] || '').trim();
+    if (required && !zh) {
+      throw new Error(`请填写中文${label}`);
+    }
+    if (required && !en) {
+      throw new Error(`请填写英文${label}`);
+    }
+    if (!zh && !en) {
+      return '';
+    }
+    if (!zh || !en) {
+      throw new Error(`${label}需同时填写中文和英文`);
+    }
+    return JSON.stringify({ 'zh-CN': zh, 'en-US': en });
+  }
+  const text = value && typeof value === 'object' ? pickText(value, language) : String(value || '').trim();
+  if (required && !text) {
+    throw new Error(`请填写${label}`);
+  }
+  return text;
+};
+
+const projectLanguageAllowed = (templateLanguages, language) => {
+  const langs = normalizeTemplateLanguages(templateLanguages);
+  if (language === 'both') {
+    return langs.includes('zh-CN') && langs.includes('en-US');
+  }
+  return langs.includes(language);
+};
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 const MAX_BANNERS = 5;
+const MAX_POSTERS = 20;
 
 const isFileId = value => /^\d{1,32}$/.test(value) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
@@ -58,6 +117,12 @@ const normalizeThemeColor = value => {
   return null;
 };
 
+const normalizeTemplateLanguages = value => {
+  const list = Array.isArray(value) ? value : [];
+  const result = TEMPLATE_LANGUAGES.filter(item => list.includes(item));
+  return result.length ? result : [TEMPLATE_LANGUAGES[0]];
+};
+
 const plain = row => (row?.get ? row.get({ plain: true }) : row);
 
 const formatTemplate = row => {
@@ -67,29 +132,44 @@ const formatTemplate = row => {
     name: data.name,
     description: data.description || '',
     builtinKey: data.builtinKey || '',
+    languages: normalizeTemplateLanguages(data.languages),
     schema: data.schema || {},
     createdAt: data.createdAt,
     updatedAt: data.updatedAt
   };
 };
 
-const formatProject = row => {
+const formatProject = (row, extra = {}) => {
   const data = plain(row);
   return {
     id: String(data.id),
     templateId: data.templateId == null ? null : String(data.templateId),
-    name: data.name,
-    description: data.description || '',
+    name: decodeProjectText(data.name),
+    description: decodeProjectText(data.description),
     schema: data.schema || {},
     status: data.status,
     language: PROJECT_LANGUAGES.includes(data.language) ? data.language : 'both',
     background: normalizeImage(data.background),
     banners: normalizeImages(data.banners, MAX_BANNERS),
     themeColor: normalizeThemeColor(data.themeColor),
+    posterBackground: normalizeImage(data.posterBackground),
     code: data.code || '',
     path: data.code ? `/q/${data.code}` : '',
     createdAt: data.createdAt,
-    updatedAt: data.updatedAt
+    updatedAt: data.updatedAt,
+    ...extra
+  };
+};
+
+const formatPoster = row => {
+  const data = plain(row);
+  return {
+    id: String(data.id),
+    html: data.html || '',
+    width: data.width,
+    height: data.height,
+    requirement: data.requirement || '',
+    createdAt: data.createdAt
   };
 };
 
@@ -136,10 +216,27 @@ module.exports = fp(async (fastify, options) => {
     if (!desc.theme_color && !desc.themeColor) {
       await queryInterface.addColumn(tableName, 'theme_color', { type: fastify.sequelize.Sequelize.DataTypes.STRING, allowNull: true }, columnOptions);
     }
+    if (!desc.poster_background && !desc.posterBackground) {
+      await queryInterface.addColumn(tableName, 'poster_background', { type: fastify.sequelize.Sequelize.DataTypes.JSON, allowNull: true }, columnOptions);
+    }
     await model.update({ language: 'both' }, { where: { [Op.or]: [{ language: null }, { language: '' }] } });
   };
 
   await ensureProjectLanguage();
+
+  const ensureTemplateLanguages = async () => {
+    const model = models.questionnaireTemplate;
+    const table = model.getTableName();
+    const tableName = typeof table === 'object' ? table.tableName : table;
+    const schema = typeof table === 'object' ? table.schema : undefined;
+    const queryInterface = model.sequelize.getQueryInterface();
+    const desc = await queryInterface.describeTable(tableName, schema ? { schema } : undefined);
+    if (!desc.languages) {
+      await queryInterface.addColumn(tableName, 'languages', { type: fastify.sequelize.Sequelize.DataTypes.JSON, allowNull: true }, schema ? { schema } : undefined);
+    }
+  };
+
+  await ensureTemplateLanguages();
 
   const ownerWhere = userInfo => ({ userId: userInfo.id });
 
@@ -149,14 +246,21 @@ module.exports = fp(async (fastify, options) => {
       const row = await models.questionnaireTemplate.findOne({
         where: { builtinKey: item.key, userId: SYSTEM_USER_ID }
       });
+      const name = pickText(item.name, 'zh-CN');
+      const description = pickText(item.description, 'zh-CN');
       if (row) {
+        if (row.name !== name || row.description !== description || !isEqual(row.languages, TEMPLATE_LANGUAGES) || !isEqual(row.schema, item.schema)) {
+          await row.update({ name, description, languages: TEMPLATE_LANGUAGES, schema: item.schema });
+          fastify.log.info(`update template: ${item.key}`);
+        }
         continue;
       }
       await models.questionnaireTemplate.create({
         userId: SYSTEM_USER_ID,
         builtinKey: item.key,
-        name: item.name,
-        description: item.description,
+        name,
+        description,
+        languages: TEMPLATE_LANGUAGES,
         schema: item.schema
       });
       fastify.log.info(`create template: ${item.key}`);
@@ -186,13 +290,15 @@ module.exports = fp(async (fastify, options) => {
     return row;
   };
 
-  const getTemplateList = async (userInfo, { filter = {}, perPage = 20, currentPage = 1 } = {}) => {
+  const getTemplateList = async (userInfo, { filter = {}, perPage = 20, currentPage = 1, locale } = {}) => {
     const scope = {
       [Op.or]: [{ userId: userInfo.id }, { userId: SYSTEM_USER_ID }]
     };
     const conditions = [scope];
     if (filter.keyword) {
-      conditions.push({ name: { [Op.like]: `%${String(filter.keyword).trim()}%` } });
+      const nameLike = { name: { [Op.like]: `%${String(filter.keyword).trim()}%` } };
+      const builtinKeys = matchBuiltinKeys(filter.keyword);
+      conditions.push(builtinKeys.length ? { [Op.or]: [nameLike, { builtinKey: builtinKeys, userId: SYSTEM_USER_ID }] } : nameLike);
     }
     if (filter.kind === 'builtin') {
       conditions.push({ builtinKey: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] } });
@@ -207,12 +313,12 @@ module.exports = fp(async (fastify, options) => {
       limit: perPage,
       order: [['updatedAt', 'DESC']]
     });
-    return { pageData: rows.map(formatTemplate), totalCount: count };
+    return { pageData: rows.map(row => localizeBuiltinTemplate(formatTemplate(row), locale)), totalCount: count };
   };
 
-  const getTemplateDetail = async (userInfo, { id }) => formatTemplate(await requireOwnedTemplate(userInfo, id));
+  const getTemplateDetail = async (userInfo, { id, locale }) => localizeBuiltinTemplate(formatTemplate(await requireOwnedTemplate(userInfo, id)), locale);
 
-  const saveTemplate = async (userInfo, { id, name, description, schema }) => {
+  const saveTemplate = async (userInfo, { id, name, description, schema, languages }) => {
     if (id) {
       const row = await models.questionnaireTemplate.findOne({
         where: { id, [Op.or]: [{ userId: userInfo.id }, { userId: SYSTEM_USER_ID }] }
@@ -228,6 +334,9 @@ module.exports = fp(async (fastify, options) => {
       }
       if (description !== undefined) {
         row.description = description || '';
+      }
+      if (languages !== undefined) {
+        row.languages = normalizeTemplateLanguages(languages);
       }
       if (schema !== undefined) {
         if (!hasSchemaBlocks(schema)) {
@@ -248,6 +357,7 @@ module.exports = fp(async (fastify, options) => {
       userId: userInfo.id,
       name: String(name).trim(),
       description: description || '',
+      languages: normalizeTemplateLanguages(languages),
       schema
     });
     return formatTemplate(row);
@@ -279,10 +389,7 @@ module.exports = fp(async (fastify, options) => {
     if (!template) {
       throw new Error('问卷模版不存在');
     }
-    const title = String(name || template.name || '').trim();
-    if (!title) {
-      throw new Error('请填写项目名称');
-    }
+    const templateLanguages = normalizeTemplateLanguages(template.languages);
     let schema = template.schema;
     if (copyFromId) {
       const source = await models.questionnaireProject.findOne({ where: Object.assign({ id: copyFromId }, ownerWhere(userInfo)) });
@@ -293,15 +400,17 @@ module.exports = fp(async (fastify, options) => {
     if (!hasSchemaBlocks(schema)) {
       throw new Error('模版还没有题目');
     }
-    const fillLanguage = language == null || language === '' ? 'both' : language;
-    if (!PROJECT_LANGUAGES.includes(fillLanguage)) {
+    const fillLanguage = language == null || language === '' ? (templateLanguages.length > 1 ? 'both' : templateLanguages[0]) : language;
+    if (!PROJECT_LANGUAGES.includes(fillLanguage) || !projectLanguageAllowed(templateLanguages, fillLanguage)) {
       throw new Error('填写语言不正确');
     }
+    const title = encodeProjectText(name == null || name === '' ? template.name : name, fillLanguage, { required: true, label: '项目名称' });
+    const detail = encodeProjectText(description == null ? template.description || '' : description, fillLanguage, { required: false, label: '项目说明' });
     const row = await models.questionnaireProject.create({
       userId: userInfo.id,
       templateId: template.id,
       name: title,
-      description: description == null ? template.description || '' : description,
+      description: detail,
       schema: JSON.parse(JSON.stringify(schema || {})),
       status: 'open',
       language: fillLanguage,
@@ -311,10 +420,10 @@ module.exports = fp(async (fastify, options) => {
     });
     row.code = await signProjectCode(row.id);
     await row.save();
-    return formatProject(row);
+    return formatProject(row, { templateLanguages });
   };
 
-  const getProjectList = async (userInfo, { filter = {}, perPage = 20, currentPage = 1 } = {}) => {
+  const getProjectList = async (userInfo, { filter = {}, perPage = 20, currentPage = 1, locale } = {}) => {
     const where = ownerWhere(userInfo);
     if (filter.keyword) {
       where.name = { [Op.like]: `%${String(filter.keyword).trim()}%` };
@@ -344,13 +453,15 @@ module.exports = fp(async (fastify, options) => {
     const ids = rows.map(row => row.id);
     const templateIds = [...new Set(rows.map(row => row.templateId).filter(Boolean).map(id => String(id)))];
     const nameByTemplate = {};
+    const languagesByTemplate = {};
     if (templateIds.length) {
       const templates = await models.questionnaireTemplate.findAll({
         where: { id: templateIds },
-        attributes: ['id', 'name']
+        attributes: ['id', 'name', 'builtinKey', 'languages']
       });
       templates.forEach(item => {
-        nameByTemplate[String(item.id)] = item.name;
+        nameByTemplate[String(item.id)] = localizeBuiltinTemplate({ name: item.name, builtinKey: item.builtinKey }, locale).name;
+        languagesByTemplate[String(item.id)] = normalizeTemplateLanguages(item.languages);
       });
     }
     const countByProject = {};
@@ -368,7 +479,7 @@ module.exports = fp(async (fastify, options) => {
     }
     return {
       pageData: rows.map(row =>
-        Object.assign(formatProject(row), {
+        Object.assign(formatProject(row, { templateLanguages: languagesByTemplate[String(row.templateId)] || ['zh-CN'] }), {
           responseCount: countByProject[String(row.id)] || 0,
           templateName: nameByTemplate[String(row.templateId)] || ''
         })
@@ -378,10 +489,94 @@ module.exports = fp(async (fastify, options) => {
   };
 
   const getProjectDetail = async (userInfo, { id }) => {
-    const data = formatProject(await requireOwnedProject(userInfo, id));
+    const row = await requireOwnedProject(userInfo, id);
+    let templateLanguages = ['zh-CN'];
+    if (row.templateId) {
+      const template = await models.questionnaireTemplate.findByPk(row.templateId, { attributes: ['languages'] });
+      templateLanguages = normalizeTemplateLanguages(template?.languages);
+    }
+    const data = formatProject(row, { templateLanguages });
     const background = await withPublicFile(data.background);
     const banners = (await Promise.all((data.banners || []).map(withPublicFile))).filter(item => item && item.url);
-    return Object.assign({}, data, { background, banners });
+    const posterBackground = await withPublicFile(data.posterBackground);
+    return Object.assign({}, data, { background, banners, posterBackground });
+  };
+
+  const generatePoster = async (userInfo, { id, width, height, requirement, locale }) => {
+    const data = formatProject(await requireOwnedProject(userInfo, id));
+    const posterLocale = locale === 'en-US' ? 'en-US' : 'zh-CN';
+    const { html } = await generatePosterHtml(fastify, {
+      name: pickText(data.name, posterLocale),
+      description: pickText(data.description, posterLocale),
+      width,
+      height,
+      requirement,
+      hasBackground: !!data.background,
+      locale
+    });
+    const row = await models.questionnairePoster.create({
+      userId: userInfo.id,
+      projectId: data.id,
+      html,
+      width: Math.round(width),
+      height: Math.round(height),
+      requirement: String(requirement || '').trim()
+    });
+    const overflow = await models.questionnairePoster.findAll({
+      where: { projectId: data.id },
+      attributes: ['id'],
+      order: [
+        ['createdAt', 'DESC'],
+        ['id', 'DESC']
+      ],
+      offset: MAX_POSTERS
+    });
+    if (overflow.length) {
+      await models.questionnairePoster.destroy({ where: { id: overflow.map(item => item.id) } });
+    }
+    return formatPoster(row);
+  };
+
+  const getPosterList = async (userInfo, { id }) => {
+    const project = await requireOwnedProject(userInfo, id);
+    const rows = await models.questionnairePoster.findAll({
+      where: { projectId: String(project.id) },
+      order: [
+        ['createdAt', 'DESC'],
+        ['id', 'DESC']
+      ],
+      limit: MAX_POSTERS
+    });
+    return rows.map(formatPoster);
+  };
+
+  const removePoster = async (userInfo, { id }) => {
+    const row = await models.questionnairePoster.findOne({ where: Object.assign({ id }, ownerWhere(userInfo)) });
+    if (!row) {
+      throw new Error('海报不存在');
+    }
+    await row.destroy();
+    return {};
+  };
+
+  const savePosterBackground = async (userInfo, { id, background }) => {
+    const row = await requireOwnedProject(userInfo, id);
+    row.posterBackground = normalizeImages(background, 1)[0] || null;
+    await row.save();
+    return { posterBackground: await withPublicFile(formatProject(row).posterBackground) };
+  };
+
+  const generateAppearanceImage = async (userInfo, { id, kind, requirement, locale }) => {
+    const data = formatProject(await requireOwnedProject(userInfo, id));
+    const imageLocale = locale === 'en-US' ? 'en-US' : 'zh-CN';
+    return generateAppearanceHtml(fastify, {
+      kind,
+      name: pickText(data.name, imageLocale),
+      description: pickText(data.description, imageLocale),
+      themeColor: data.themeColor,
+      requirement,
+      locale
+    });
   };
 
   const updateAppearance = async (userInfo, { id, background, banners, themeColor }) => {
@@ -420,7 +615,7 @@ module.exports = fp(async (fastify, options) => {
     return { pageData: rows.map(formatResponse), totalCount: count };
   };
 
-  const exportProject = async (userInfo, { id }) => {
+  const exportProject = async (userInfo, { id, locale }) => {
     const project = await requireOwnedProject(userInfo, id);
     const rows = await models.questionnaireResponse.findAll({
       where: { projectId: project.id },
@@ -429,14 +624,15 @@ module.exports = fp(async (fastify, options) => {
     if (!rows.length) {
       throw new Error('暂无答卷可下载');
     }
-    const columns = buildQuestionnaireColumns(project.schema);
-    const matrix = [['提交时间', ...columns.map(column => column.header)]];
+    const isEnglish = String(locale || '').startsWith('en');
+    const columns = buildQuestionnaireColumns(project.schema, locale);
+    const matrix = [[isEnglish ? 'Submitted At' : '提交时间', ...columns.map(column => column.header)]];
     rows.forEach(row => {
       const item = formatResponse(row);
       matrix.push([dayjs(item.submittedAt).format('YYYY-MM-DD HH:mm:ss'), ...columns.map(column => column.getValue(item.answers))]);
     });
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), '问卷结果');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), isEnglish ? 'Results' : '问卷结果');
     return {
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       file: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
@@ -631,6 +827,11 @@ module.exports = fp(async (fastify, options) => {
     updateAppearance,
     getProjectList,
     getProjectDetail,
+    generatePoster,
+    getPosterList,
+    removePoster,
+    savePosterBackground,
+    generateAppearanceImage,
     closeProject,
     openProject,
     getResponseList,

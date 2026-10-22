@@ -19,12 +19,20 @@ const isEmptyValue = value => {
   return false;
 };
 
-const mapOptionLabel = (value, options) => {
+// schema 文案字段：字符串（旧格式，不论语言原样显示），或 { 'zh-CN': string, 'en-US': string }（当前语言 → zh-CN → en-US）
+const pickText = (value, locale) => {
+  if (value && typeof value === 'object') {
+    return value[locale] || value['zh-CN'] || value['en-US'] || '';
+  }
+  return value == null ? '' : String(value);
+};
+
+const mapOptionLabel = (value, options, locale) => {
   if (!Array.isArray(options) || !options.length) {
     return value;
   }
   const match = options.find(item => item && item.value === value);
-  return match?.label ?? value;
+  return match ? pickText(match.label, locale) || value : value;
 };
 
 const formatDateValue = (value, format) => {
@@ -45,7 +53,7 @@ const formatDateValue = (value, format) => {
   return value == null ? '' : String(value);
 };
 
-const formatFieldValue = (field, value) => {
+const formatFieldValue = (field, value, locale) => {
   if (isEmptyValue(value)) {
     return '';
   }
@@ -55,9 +63,9 @@ const formatFieldValue = (field, value) => {
 
   if (type === 'Switch' || type === 'Checkbox') {
     if (value) {
-      return props.checkedChildren || '是';
+      return pickText(props.checkedChildren, locale) || '是';
     }
-    return props.unCheckedChildren || '否';
+    return pickText(props.unCheckedChildren, locale) || '否';
   }
 
   if (type === 'DatePicker') {
@@ -67,11 +75,11 @@ const formatFieldValue = (field, value) => {
   if (Array.isArray(props.options) && props.options.length) {
     if (Array.isArray(value)) {
       return value
-        .map(item => mapOptionLabel(item, props.options))
+        .map(item => mapOptionLabel(item, props.options, locale))
         .filter(item => item != null && item !== '')
         .join('、');
     }
-    return mapOptionLabel(value, props.options);
+    return mapOptionLabel(value, props.options, locale);
   }
 
   if (Array.isArray(value)) {
@@ -87,7 +95,7 @@ const formatFieldValue = (field, value) => {
 
 const joinHeader = parts => parts.filter(Boolean).join('-');
 
-const collectColumnsFromBlocks = (blocks, headerPrefix = '') => {
+const collectColumnsFromBlocks = (blocks, locale, headerPrefix = '') => {
   const columns = [];
 
   (blocks || []).forEach(block => {
@@ -95,18 +103,18 @@ const collectColumnsFromBlocks = (blocks, headerPrefix = '') => {
       return;
     }
 
-    const blockHeader = joinHeader([headerPrefix, block.title || block.label]);
+    const blockHeader = joinHeader([headerPrefix, pickText(block.title, locale) || pickText(block.label, locale)]);
 
     if (block.kind === 'formInfo' || !block.kind) {
       (block.list || [])
         .filter(field => field && field.name && !field.hidden)
         .forEach(field => {
           columns.push({
-            header: joinHeader([blockHeader, field.label || field.name]),
-            getValue: rowData => formatFieldValue(field, getByPath(rowData, field.name))
+            header: joinHeader([blockHeader, pickText(field.label, locale) || field.name]),
+            getValue: rowData => formatFieldValue(field, getByPath(rowData, field.name), locale)
           });
         });
-      columns.push(...collectColumnsFromBlocks(block.blocks, blockHeader));
+      columns.push(...collectColumnsFromBlocks(block.blocks, locale, blockHeader));
       return;
     }
 
@@ -118,18 +126,18 @@ const collectColumnsFromBlocks = (blocks, headerPrefix = '') => {
         .forEach(field => {
           const fieldPath = name ? `${name}.${field.name}` : field.name;
           columns.push({
-            header: joinHeader([nestedHeader, field.label || field.name]),
-            getValue: rowData => formatFieldValue(field, getByPath(rowData, fieldPath))
+            header: joinHeader([nestedHeader, pickText(field.label, locale) || field.name]),
+            getValue: rowData => formatFieldValue(field, getByPath(rowData, fieldPath), locale)
           });
         });
-      columns.push(...collectColumnsFromBlocks(block.blocks, nestedHeader));
+      columns.push(...collectColumnsFromBlocks(block.blocks, locale, nestedHeader));
     }
   });
 
   return columns;
 };
 
-const buildQuestionnaireColumns = schema => collectColumnsFromBlocks(schema?.blocks || []);
+const buildQuestionnaireColumns = (schema, locale) => collectColumnsFromBlocks(schema?.blocks || [], locale);
 
 module.exports = {
   buildQuestionnaireColumns,

@@ -11,16 +11,6 @@ import { setOidcClient } from './commons/oidcClient';
 
 window.PUBLIC_URL = window.runtimePublicUrl || process.env.PUBLIC_URL;
 
-const publicBase = String(window.PUBLIC_URL || '').replace(/\/+$/, '');
-if (publicBase && typeof document !== 'undefined') {
-  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"], link[rel="manifest"]').forEach(link => {
-    const href = link.getAttribute('href') || '';
-    if (href.startsWith('/') && !href.startsWith(`${publicBase}/`)) {
-      link.setAttribute('href', `${publicBase}${href}`);
-    }
-  });
-}
-
 const ensureBootMask = () => {
   if (typeof document === 'undefined') {
     return;
@@ -39,7 +29,6 @@ const ensureBootMask = () => {
     const img = document.createElement('img');
     img.id = 'app-boot-logo';
     img.alt = '';
-    img.src = `${publicBase}/logo.svg`;
     mask.appendChild(img);
     document.body.prepend(mask);
   }
@@ -53,6 +42,16 @@ const ensureBootMask = () => {
 };
 
 ensureBootMask();
+
+const applyStaticUrls = appUrl => {
+  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"], link[rel="manifest"]').forEach(link => {
+    link.setAttribute('href', appUrl.asset(link.getAttribute('href') || ''));
+  });
+  const logo = document.getElementById('app-boot-logo');
+  if (logo) {
+    logo.setAttribute('src', appUrl.asset(logo.getAttribute('src') || '/logo.svg'));
+  }
+};
 
 const baseApiUrl = window.runtimeApiUrl || '';
 
@@ -96,12 +95,12 @@ const globalInit = async () => {
       'components-admin': {
         ...registry,
         remote: 'components-admin',
-        defaultVersion: '1.1.124'
+        defaultVersion: '1.1.129'
       },
       'components-thirdparty': {
         ...registry,
         remote: 'components-thirdparty',
-        defaultVersion: '0.1.50'
+        defaultVersion: '0.1.55'
       },
       'fastify-app':
         process.env.NODE_ENV === 'development'
@@ -117,6 +116,9 @@ const globalInit = async () => {
             }
     }
   });
+
+  const { default: appUrl } = await loadModule('components-admin:Oidc@appUrl');
+  applyStaticUrls(appUrl);
 
   const { default: createOidcClient } = await loadModule('components-admin:Oidc@createOidcClient');
   const oidcConfig = await loadOidcConfig();
@@ -219,6 +221,7 @@ const globalInit = async () => {
     ajax,
     oidc: oidcClient,
     oidcMode: oidcConfig?.mode,
+    appUrl,
     staticUrl: baseApiUrl,
     enums: Object.assign({}, await safeLoadApis('components-admin:Task@enums'), await safeLoadApis('components-admin:MessageManger@enums'), {
       taskType: () => []

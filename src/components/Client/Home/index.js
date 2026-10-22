@@ -18,7 +18,7 @@ const requestTotal = async (ajax, api, params) => {
   return resData.code === 0 ? resData.data?.totalCount || 0 : null;
 };
 
-const useHomeData = ({ ajax, apis, refreshKey }) => {
+const useHomeData = ({ ajax, apis, refreshKey, locale }) => {
   const [stats, setStats] = useState(null);
   const [templates, setTemplates] = useState(null);
   const presetRef = useRef({ ajax, apis });
@@ -33,13 +33,13 @@ const useHomeData = ({ ajax, apis, refreshKey }) => {
         active && setStats({ total, open, closed, customTemplates });
       }
     );
-    ajax(Object.assign({}, templateList, { params: { perPage: 4, currentPage: 1 } })).then(({ data: resData }) => {
+    ajax(Object.assign({}, templateList, { params: { perPage: 4, currentPage: 1, locale } })).then(({ data: resData }) => {
       active && setTemplates(resData.code === 0 ? resData.data?.pageData || [] : []);
     });
     return () => {
       active = false;
     };
-  }, [refreshKey]);
+  }, [refreshKey, locale]);
 
   return { stats, templates };
 };
@@ -65,8 +65,8 @@ const Home = createWithRemoteLoader({
   withLocale(
     withQuestionnaireLocale(({ remoteModules }) => {
       const [BizUnit, TablePageRender, usePreset, FormInfo, useModal] = remoteModules;
-      const { apis, ajax } = usePreset();
-      const { formatMessage } = useIntl();
+      const { apis, ajax, appUrl } = usePreset();
+      const { formatMessage, locale } = useIntl();
       const formModal = FormInfo.useFormModal();
       const modal = useModal();
       const { message } = App.useApp();
@@ -75,6 +75,7 @@ const Home = createWithRemoteLoader({
       const { openCreate, getActionList } = useProjectActions({
         ajax,
         apis,
+        appUrl,
         formModal,
         modal,
         message,
@@ -83,7 +84,7 @@ const Home = createWithRemoteLoader({
         onChanged: () => setRefreshKey(key => key + 1),
         renderCreateForm: onAddTemplate => <ProjectCreateForm FormInfo={FormInfo} apis={apis} formatMessage={formatMessage} onAddTemplate={onAddTemplate} />
       });
-      const { stats, templates } = useHomeData({ ajax, apis, refreshKey });
+      const { stats, templates } = useHomeData({ ajax, apis, refreshKey, locale });
       const getScrollElement = useScrollElement();
       const isMobile = useIsMobile();
 

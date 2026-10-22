@@ -1,16 +1,10 @@
 import ProjectAppearance from '../../pages/ProjectAppearance';
+import ProjectShare, { createFooterSlot } from './ProjectShare';
 import QuestionnaireFormInner from '@components/Questionnaire/QuestionnaireFormInner';
-import { withPublicUrl } from '../../commons/publicUrl';
+import { defaultProjectLanguage, normalizeTemplateLanguages, unpackProjectText } from '../../commons/schemaLanguages';
+import { packProjectCreatePayload } from './projectForm';
 
-const fillUrl = code => `${window.location.origin}${withPublicUrl(`/q/${code}`)}`;
-
-const appearanceData = formData => ({
-  background: formData.background || [],
-  banners: formData.banners || [],
-  themeColor: formData.themeColor || null
-});
-
-const useProjectActions = ({ ajax, apis, formModal, modal, message, formatMessage, navigate, onChanged, renderCreateForm }) => {
+const useProjectActions = ({ ajax, apis, appUrl, formModal, modal, message, formatMessage, navigate, onChanged, renderCreateForm }) => {
   const openCreateTemplate = (reloadList, openApi) => {
     formModal({
       title: formatMessage({ id: 'QuestionnaireTemplateCreate' }),
@@ -22,6 +16,7 @@ const useProjectActions = ({ ajax, apis, formModal, modal, message, formatMessag
               data: {
                 name: formData.name,
                 description: formData.description || '',
+                languages: normalizeTemplateLanguages(formData.languages),
                 schema: formData.schema
               }
             })
@@ -47,18 +42,26 @@ const useProjectActions = ({ ajax, apis, formModal, modal, message, formatMessag
   };
 
   const openCreate = preset => {
-    const template = preset?.templateId ? { id: preset.templateId, name: preset.templateName || preset.name || '' } : null;
+    const templateLanguages = normalizeTemplateLanguages(preset?.templateLanguages || preset?.languages);
+    const language = preset?.language && ['zh-CN', 'en-US', 'both'].includes(preset.language) ? preset.language : defaultProjectLanguage(templateLanguages);
+    const template = preset?.templateId
+      ? { id: preset.templateId, name: preset.templateName || (typeof preset.name === 'string' ? preset.name : ''), languages: templateLanguages }
+      : null;
+    const nameParts = unpackProjectText(preset?.name, language);
+    const descriptionParts = unpackProjectText(preset?.description, language);
     formModal({
       title: formatMessage({ id: preset?.copyFromId ? 'QuestionnaireProjectDuplicate' : 'QuestionnaireProjectCreate' }),
       size: 'default',
       formProps: {
         data: Object.assign(
-          { language: preset?.language || 'both' },
+          { language },
           template
             ? {
                 templateId: template,
-                name: preset.name || '',
-                description: preset.description || '',
+                name: nameParts.primary,
+                nameEnUS: nameParts.secondary,
+                description: descriptionParts.primary,
+                descriptionEnUS: descriptionParts.secondary,
                 background: preset.background ? [preset.background] : [],
                 banners: preset.banners || [],
                 themeColor: preset.themeColor || null
@@ -66,17 +69,9 @@ const useProjectActions = ({ ajax, apis, formModal, modal, message, formatMessag
             : {}
         ),
         onSubmit: async formData => {
-          const templateId = formData.templateId?.id || formData.templateId;
           const { data: saveData } = await ajax(
             Object.assign({}, apis.questionnaire.projectCreate, {
-              data: {
-                templateId,
-                name: formData.name,
-                description: formData.description || '',
-                language: formData.language || 'both',
-                copyFromId: preset?.copyFromId,
-                ...appearanceData(formData)
-              }
+              data: Object.assign({}, packProjectCreatePayload(formData), { copyFromId: preset?.copyFromId })
             })
           );
           if (saveData.code !== 0) {
@@ -104,14 +99,18 @@ const useProjectActions = ({ ajax, apis, formModal, modal, message, formatMessag
     }, 0);
   };
 
-  const copyLink = async item => {
-    const url = fillUrl(item.code);
-    try {
-      await navigator.clipboard.writeText(url);
-      message.success(formatMessage({ id: 'QuestionnaireProjectCopySuccess' }));
-    } catch (error) {
-      message.info(url);
-    }
+  const openShare = item => {
+    const footerSlot = createFooterSlot();
+    modal({
+      zIndex: 1200,
+      noPadding: true,
+      footerButtons: [],
+      footer: <div ref={footerSlot.ref} style={{ width: '100%' }} />,
+      children: <ProjectShare data={item} url={appUrl.absolute(`/q/${item.code}`)} footerSlot={footerSlot} />
+    });
+    window.setTimeout(() => {
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    }, 0);
   };
 
   const closeProject = async (item, onSuccess) => {
@@ -145,8 +144,8 @@ const useProjectActions = ({ ajax, apis, formModal, modal, message, formatMessag
       {
         ...actionProps,
         data,
-        children: formatMessage({ id: 'QuestionnaireProjectCopy' }),
-        onClick: () => copyLink(data)
+        children: formatMessage({ id: 'QuestionnaireProjectShare' }),
+        onClick: () => openShare(data)
       },
       {
         ...actionProps,
@@ -160,6 +159,7 @@ const useProjectActions = ({ ajax, apis, formModal, modal, message, formatMessag
             name: data.name,
             description: data.description,
             language: data.language,
+            templateLanguages: data.templateLanguages || data.languages,
             background: data.background,
             banners: data.banners,
             themeColor: data.themeColor

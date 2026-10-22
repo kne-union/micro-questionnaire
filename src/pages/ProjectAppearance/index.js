@@ -4,21 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from '@kne/react-intl';
 import withLocale from '@components/Questionnaire/withLocale';
 import BannerSlides from '@components/Questionnaire/BannerSlides';
+import SchemaHost from '@components/Questionnaire/SchemaHost';
 import fill from '../QuestionnaireFill/style.module.scss';
+import { pickLocaleText } from '../../commons/schemaLanguages';
+import AiImageModal from './AiImageModal';
 import style from './style.module.scss';
 
 const imageAccept = '.jpg,.jpeg,.png,.webp,.gif';
 const maxBanners = 5;
-
-const fileSrc = (staticUrl, url) => {
-  if (!url) {
-    return '';
-  }
-  if (/^https?:\/\//.test(url)) {
-    return url;
-  }
-  return `${staticUrl || ''}${url}`;
-};
 
 const browserFillLocale = () => {
   const list = window.navigator.languages?.length ? window.navigator.languages : [window.navigator.language];
@@ -34,11 +27,9 @@ const browserFillLocale = () => {
   return 'zh-CN';
 };
 
-const SchemaHost = createWithRemoteLoader({
-  modules: ['components-thirdparty:FormCreator@SchemaRenderer']
-})(({ remoteModules, locale, schema, onSubmit }) => {
-  const [SchemaRenderer] = remoteModules;
-  return <SchemaRenderer locale={locale} schema={schema} formProps={{ onSubmit }} />;
+const HeroBadge = withLocale(({ className }) => {
+  const { formatMessage } = useIntl();
+  return <span className={className}>{formatMessage({ id: 'QuestionnaireFillBadge' })}</span>;
 });
 
 const ProjectAppearance = createWithRemoteLoader({
@@ -46,7 +37,7 @@ const ProjectAppearance = createWithRemoteLoader({
 })(
   withLocale(({ remoteModules, projectId }) => {
     const [usePreset] = remoteModules;
-    const { ajax, apis, staticUrl } = usePreset();
+    const { ajax, apis, appUrl } = usePreset();
     const { formatMessage } = useIntl();
     const { message } = App.useApp();
     const backgroundInput = useRef(null);
@@ -59,6 +50,7 @@ const ProjectAppearance = createWithRemoteLoader({
     const colorDraftRef = useRef(undefined);
     const [colorDraft, setColorDraft] = useState(undefined);
     const [pickerKey, setPickerKey] = useState(0);
+    const [aiKind, setAiKind] = useState(null);
     const setColorDraftValue = value => {
       colorDraftRef.current = value;
       setColorDraft(value);
@@ -183,6 +175,20 @@ const ProjectAppearance = createWithRemoteLoader({
       persist(Object.assign({}, project, { banners: (project.banners || []).concat(image) }));
     };
 
+    const onApplyAiImage = async file => {
+      const image = await uploadImage(file);
+      if (!image) {
+        return;
+      }
+      const kind = aiKind;
+      setAiKind(null);
+      if (kind === 'banner') {
+        persist(Object.assign({}, project, { banners: (project.banners || []).concat(image).slice(0, maxBanners) }));
+        return;
+      }
+      persist(Object.assign({}, project, { background: image }));
+    };
+
     if (loading) {
       return (
         <div className={fill.page}>
@@ -203,8 +209,8 @@ const ProjectAppearance = createWithRemoteLoader({
       );
     }
 
-    const backgroundSrc = fileSrc(staticUrl, project.background?.url);
-    const banners = (project.banners || []).map(item => Object.assign({}, item, { src: fileSrc(staticUrl, item.url) })).filter(item => item.src);
+    const backgroundSrc = appUrl.api(project.background?.url);
+    const banners = (project.banners || []).map(item => Object.assign({}, item, { src: appUrl.api(item.url) })).filter(item => item.src);
     const savedColor = project.themeColor || null;
     const themeColor = colorDraft === undefined ? savedColor : colorDraft;
     const pageStyle = Object.assign({}, backgroundSrc ? { backgroundImage: `url(${backgroundSrc})` } : {}, themeColor ? { '--primary-color': themeColor } : {});
@@ -253,6 +259,9 @@ const ProjectAppearance = createWithRemoteLoader({
           <Button disabled={saving} onClick={() => backgroundInput.current?.click()}>
             {formatMessage({ id: project.background ? 'QuestionnaireProjectAppearanceChangeBackground' : 'QuestionnaireProjectAppearanceAddBackground' })}
           </Button>
+          <Button disabled={saving} onClick={() => setAiKind('background')}>
+            {formatMessage({ id: 'QuestionnaireProjectAppearanceAiBackground' })}
+          </Button>
           {project.background ? (
             <Button disabled={saving} onClick={() => persist(Object.assign({}, project, { background: null }))}>
               {formatMessage({ id: 'QuestionnaireProjectAppearanceClearBackground' })}
@@ -263,8 +272,14 @@ const ProjectAppearance = createWithRemoteLoader({
               {formatMessage({ id: 'QuestionnaireProjectAppearanceAddBanner' })}
             </Button>
           ) : null}
+          {banners.length < maxBanners ? (
+            <Button disabled={saving} onClick={() => setAiKind('banner')}>
+              {formatMessage({ id: 'QuestionnaireProjectAppearanceAiBanner' })}
+            </Button>
+          ) : null}
           <input ref={backgroundInput} className={style.file} type="file" accept={imageAccept} onChange={onPickBackground} />
           <input ref={bannerInput} className={style.file} type="file" accept={imageAccept} onChange={onPickBanner} />
+          {aiKind ? <AiImageModal kind={aiKind} projectId={projectId} ajax={ajax} apis={apis} onCancel={() => setAiKind(null)} onApply={onApplyAiImage} /> : null}
         </div>
         <div className={`${fill.column} ${style.column}`}>
           <BannerSlides
@@ -283,7 +298,7 @@ const ProjectAppearance = createWithRemoteLoader({
           <header className={fill.hero}>
             <div className={fill['hero-inner']}>
               <div className={fill['hero-bar']}>
-                <span className={fill['hero-badge']}>{formatMessage({ id: 'QuestionnaireFillBadge' })}</span>
+                <HeroBadge locale={locale} className={fill['hero-badge']} />
                 {project.language === 'both' ? (
                   <div className={fill.lang}>
                     <button type="button" className={locale === 'zh-CN' ? fill['lang-on'] : ''} onClick={() => setLocale('zh-CN')}>
@@ -296,9 +311,9 @@ const ProjectAppearance = createWithRemoteLoader({
                 ) : null}
               </div>
               <Typography.Title level={2} className={fill['hero-title']}>
-                {project.name}
+                {pickLocaleText(project.name, locale)}
               </Typography.Title>
-              {(project.description || '').trim() ? <div className={fill['hero-notice']}>{project.description}</div> : null}
+              {pickLocaleText(project.description, locale).trim() ? <div className={fill['hero-notice']}>{pickLocaleText(project.description, locale)}</div> : null}
             </div>
           </header>
           <div className={fill.content}>

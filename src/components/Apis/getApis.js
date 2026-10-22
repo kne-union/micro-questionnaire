@@ -39,6 +39,26 @@ const questionnaire = {
     url: `${prefix}/questionnaire/project/appearance`,
     method: 'POST'
   },
+  projectAppearanceGenerate: {
+    url: `${prefix}/questionnaire/project/appearance/generate`,
+    method: 'POST'
+  },
+  projectPosterGenerate: {
+    url: `${prefix}/questionnaire/project/poster/generate`,
+    method: 'POST'
+  },
+  projectPosterList: {
+    url: `${prefix}/questionnaire/project/poster/list`,
+    method: 'GET'
+  },
+  projectPosterRemove: {
+    url: `${prefix}/questionnaire/project/poster/remove`,
+    method: 'POST'
+  },
+  projectPosterBackground: {
+    url: `${prefix}/questionnaire/project/poster/background`,
+    method: 'POST'
+  },
   projectClose: {
     url: `${prefix}/questionnaire/project/close`,
     method: 'POST'

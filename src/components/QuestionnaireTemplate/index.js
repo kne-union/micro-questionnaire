@@ -7,7 +7,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import withLocale from '@components/Questionnaire/withLocale';
 import QuestionnaireFormInner from '@components/Questionnaire/QuestionnaireFormInner';
 import { renderListCards } from '@components/Questionnaire/listCards';
-import { ProjectCreateForm } from '@components/QuestionnaireProject';
+import { packProjectCreatePayload, ProjectCreateForm } from '@components/QuestionnaireProject';
+import schemaLanguages, { defaultProjectLanguage, normalizeTemplateLanguages } from '../../commons/schemaLanguages';
 
 const QuestionnaireTemplate = createWithRemoteLoader({
   modules: ['components-admin:BizUnit', 'components-admin:BizUnit@TablePageRender', 'components-core:Global@usePreset', 'components-core:FormInfo', 'components-core:Filter']
@@ -15,7 +16,7 @@ const QuestionnaireTemplate = createWithRemoteLoader({
   withLocale(({ remoteModules }) => {
     const [BizUnit, TablePageRender, usePreset, FormInfo, Filter] = remoteModules;
     const { SuperSelectFilterItem } = Filter.fields;
-    const { formatMessage } = useIntl();
+    const { formatMessage, locale } = useIntl();
     const { apis, ajax } = usePreset();
     const { message } = App.useApp();
     const formModal = FormInfo.useFormModal();
@@ -32,7 +33,7 @@ const QuestionnaireTemplate = createWithRemoteLoader({
         title: formatMessage({ id: 'QuestionnaireTemplateEdit' }),
         size: 'large',
         formProps: {
-          data: { name: item.name, description: item.description, schema: item.schema },
+          data: { name: item.name, description: item.description, languages: normalizeTemplateLanguages(item.languages), schema: item.schema },
           onSubmit: async formData => {
             const { data: resData } = await ajax(
               Object.assign({}, templateApis.templateSave, {
@@ -40,6 +41,7 @@ const QuestionnaireTemplate = createWithRemoteLoader({
                   id: item.id,
                   name: formData.name,
                   description: formData.description || '',
+                  languages: normalizeTemplateLanguages(formData.languages),
                   schema: formData.schema
                 }
               })
@@ -66,6 +68,7 @@ const QuestionnaireTemplate = createWithRemoteLoader({
                 data: {
                   name: formData.name,
                   description: formData.description || '',
+                  languages: normalizeTemplateLanguages(formData.languages),
                   schema: formData.schema
                 }
               })
@@ -97,24 +100,15 @@ const QuestionnaireTemplate = createWithRemoteLoader({
         size: 'default',
         formProps: {
           data: {
-            language: 'both',
-            templateId: { id: preset.templateId, name: preset.name || '' },
+            language: defaultProjectLanguage(preset.languages),
+            templateId: { id: preset.templateId, name: preset.name || '', languages: normalizeTemplateLanguages(preset.languages) },
             name: preset.name || '',
             description: preset.description || ''
           },
           onSubmit: async formData => {
-            const templateId = formData.templateId?.id || formData.templateId;
             const { data: saveData } = await ajax(
               Object.assign({}, templateApis.projectCreate, {
-                data: {
-                  templateId,
-                  name: formData.name,
-                  description: formData.description || '',
-                  language: formData.language || 'both',
-                  background: formData.background || [],
-                  banners: formData.banners || [],
-                  themeColor: formData.themeColor || null
-                }
+                data: packProjectCreatePayload(formData)
               })
             );
             if (saveData.code !== 0) {
@@ -144,12 +138,13 @@ const QuestionnaireTemplate = createWithRemoteLoader({
         isNext
         name="questionnaire-template-list"
         apis={{
-          list: templateApis.templateList,
+          list: Object.assign({}, templateApis.templateList, { params: { locale } }),
           create: ({ formData }) =>
             Object.assign({}, templateApis.templateSave, {
               data: {
                 name: formData.name,
                 description: formData.description || '',
+                languages: normalizeTemplateLanguages(formData.languages),
                 schema: formData.schema
               }
             }),
@@ -159,6 +154,7 @@ const QuestionnaireTemplate = createWithRemoteLoader({
                 id: data.id,
                 name: formData.name,
                 description: formData.description || '',
+                languages: normalizeTemplateLanguages(formData.languages),
                 schema: formData.schema
               }
             }),
@@ -179,6 +175,17 @@ const QuestionnaireTemplate = createWithRemoteLoader({
               type: item.builtinKey ? 'processing' : 'default',
               text: formatMessage({ id: item.builtinKey ? 'QuestionnaireTemplateDefault' : 'QuestionnaireTemplateCustom' })
             })
+          },
+          {
+            name: 'languages',
+            title: formatMessage({ id: 'QuestionnaireTemplateLanguages' }),
+            getValueOf: item => {
+              const languages = normalizeTemplateLanguages(item.languages);
+              return schemaLanguages
+                .filter(language => languages.includes(language.value))
+                .map(language => formatMessage({ id: language.labelId }))
+                .join(' / ');
+            }
           },
           {
             name: 'description',
@@ -219,7 +226,8 @@ const QuestionnaireTemplate = createWithRemoteLoader({
               openCreateProject({
                 templateId: data.id,
                 name: data.name,
-                description: data.description
+                description: data.description,
+                languages: data.languages
               })
           },
           {
