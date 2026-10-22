@@ -1,12 +1,14 @@
 import { createWithRemoteLoader } from '@kne/remote-loader';
-import { App, Button, ColorPicker, ConfigProvider, Result, Spin, Typography } from 'antd';
+import { App, Button, ColorPicker, ConfigProvider, Result, Space, Spin, Typography } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from '@kne/react-intl';
+import classnames from 'classnames';
 import withLocale from '@components/Questionnaire/withLocale';
 import BannerSlides from '@components/Questionnaire/BannerSlides';
 import SchemaHost from '@components/Questionnaire/SchemaHost';
 import fill from '../QuestionnaireFill/style.module.scss';
 import { pickLocaleText } from '../../commons/schemaLanguages';
+import presetBackgrounds, { matchPresetBackground, presetBackgroundUrl, uploadPresetBackground } from '../../commons/presetBackgrounds';
 import AiImageModal from './AiImageModal';
 import style from './style.module.scss';
 
@@ -32,10 +34,13 @@ const HeroBadge = withLocale(({ className }) => {
   return <span className={className}>{formatMessage({ id: 'QuestionnaireFillBadge' })}</span>;
 });
 
+const toFileValue = image => ({ id: image.id, filename: image.filename, originalName: image.filename });
+
+// 改动只作用于预览草稿，由弹窗 footer 的保存按钮调用 saveRef.current() 统一提交
 const ProjectAppearance = createWithRemoteLoader({
   modules: ['components-core:Global@usePreset']
 })(
-  withLocale(({ remoteModules, projectId }) => {
+  withLocale(({ remoteModules, projectId, saveRef }) => {
     const [usePreset] = remoteModules;
     const { ajax, apis, appUrl } = usePreset();
     const { formatMessage } = useIntl();
@@ -43,18 +48,11 @@ const ProjectAppearance = createWithRemoteLoader({
     const backgroundInput = useRef(null);
     const bannerInput = useRef(null);
     const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
+    const [uploading, setUploading] = useState(null);
     const [error, setError] = useState(null);
     const [project, setProject] = useState(null);
     const [locale, setLocale] = useState('zh-CN');
-    const colorDraftRef = useRef(undefined);
-    const [colorDraft, setColorDraft] = useState(undefined);
-    const [pickerKey, setPickerKey] = useState(0);
     const [aiKind, setAiKind] = useState(null);
-    const setColorDraftValue = value => {
-      colorDraftRef.current = value;
-      setColorDraft(value);
-    };
 
     const load = useCallback(async () => {
       setLoading(true);
@@ -92,31 +90,41 @@ const ProjectAppearance = createWithRemoteLoader({
       load();
     }, [load]);
 
-    const persist = async next => {
-      setSaving(true);
-      const previous = project;
-      setProject(next);
-      try {
-        const { data: resData } = await ajax(
-          Object.assign({}, apis.questionnaire.projectAppearance, {
-            data: {
-              id: projectId,
-              themeColor: next.themeColor || null,
-              background: next.background ? [{ id: next.background.id, filename: next.background.filename, originalName: next.background.filename }] : [],
-              banners: (next.banners || []).map(item => ({ id: item.id, filename: item.filename, originalName: item.filename }))
-            }
-          })
-        );
-        if (resData.code !== 0) {
-          setProject(previous);
-          return;
-        }
-        message.success(formatMessage({ id: 'QuestionnaireProjectAppearanceSuccess' }));
-      } catch (err) {
-        setProject(previous);
-      } finally {
-        setSaving(false);
+    const save = async () => {
+      if (!project) {
+        return false;
       }
+      const { data: resData } = await ajax(
+        Object.assign({}, apis.questionnaire.projectAppearance, {
+          data: {
+            id: projectId,
+            themeColor: project.themeColor || null,
+            background: project.background ? [toFileValue(project.background)] : [],
+            banners: (project.banners || []).map(toFileValue)
+          }
+        })
+      );
+      if (resData.code !== 0) {
+        return false;
+      }
+      message.success(formatMessage({ id: 'QuestionnaireProjectAppearanceSuccess' }));
+      return true;
+    };
+
+    if (saveRef) {
+      saveRef.current = save;
+    }
+
+    const update = patch => setProject(current => Object.assign({}, current, patch));
+
+    const fileUrl = async id => {
+      const { data: urlBody } = await ajax({
+        url: `/api/v1/static/file-url/${id}`,
+        method: 'GET',
+        showError: false
+      });
+      const url = typeof urlBody === 'string' ? urlBody : urlBody?.data;
+      return typeof url === 'string' ? url : '';
     };
 
     const uploadImage = async file => {
@@ -136,17 +144,20 @@ const ProjectAppearance = createWithRemoteLoader({
         return null;
       }
       const record = body.data;
-      const { data: urlBody } = await ajax({
-        url: `/api/v1/static/file-url/${record.id}`,
-        method: 'GET',
-        showError: false
-      });
-      const url = typeof urlBody === 'string' ? urlBody : urlBody?.data;
       return {
         id: record.id,
         filename: record.filename || file.name,
-        url: typeof url === 'string' ? url : ''
+        url: await fileUrl(record.id)
       };
+    };
+
+    const withUploading = async (key, task) => {
+      setUploading(key);
+      try {
+        return await task();
+      } finally {
+        setUploading(null);
+      }
     };
 
     const onPickBackground = async event => {
@@ -155,11 +166,8 @@ const ProjectAppearance = createWithRemoteLoader({
       if (!file || !project) {
         return;
       }
-      const image = await uploadImage(file);
-      if (!image) {
-        return;
-      }
-      persist(Object.assign({}, project, { background: image }));
+      const image = await withUploading('background', () => uploadImage(file));
+      image && update({ background: image });
     };
 
     const onPickBanner = async event => {
@@ -168,25 +176,34 @@ const ProjectAppearance = createWithRemoteLoader({
       if (!file || !project || (project.banners || []).length >= maxBanners) {
         return;
       }
-      const image = await uploadImage(file);
+      const image = await withUploading('banner', () => uploadImage(file));
+      image && update({ banners: (project.banners || []).concat(image) });
+    };
+
+    const onPickPreset = async key => {
+      const image = await withUploading(key, async () => {
+        const record = await uploadPresetBackground({ appUrl, apis, key });
+        return record ? Object.assign({}, record, { url: await fileUrl(record.id) }) : null;
+      });
       if (!image) {
+        message.error(formatMessage({ id: 'QuestionnaireProjectAppearanceUploadFailed' }));
         return;
       }
-      persist(Object.assign({}, project, { banners: (project.banners || []).concat(image) }));
+      update({ background: image });
     };
 
     const onApplyAiImage = async file => {
-      const image = await uploadImage(file);
+      const kind = aiKind;
+      const image = await withUploading(kind, () => uploadImage(file));
       if (!image) {
         return;
       }
-      const kind = aiKind;
       setAiKind(null);
       if (kind === 'banner') {
-        persist(Object.assign({}, project, { banners: (project.banners || []).concat(image).slice(0, maxBanners) }));
+        update({ banners: (project.banners || []).concat(image).slice(0, maxBanners) });
         return;
       }
-      persist(Object.assign({}, project, { background: image }));
+      update({ background: image });
     };
 
     if (loading) {
@@ -209,132 +226,133 @@ const ProjectAppearance = createWithRemoteLoader({
       );
     }
 
+    const busy = !!uploading;
     const backgroundSrc = appUrl.api(project.background?.url);
     const banners = (project.banners || []).map(item => Object.assign({}, item, { src: appUrl.api(item.url) })).filter(item => item.src);
-    const savedColor = project.themeColor || null;
-    const themeColor = colorDraft === undefined ? savedColor : colorDraft;
-    const pageStyle = Object.assign({}, backgroundSrc ? { backgroundImage: `url(${backgroundSrc})` } : {}, themeColor ? { '--primary-color': themeColor } : {});
-    const page = (
-      <div className={backgroundSrc ? `${fill.page} ${fill['has-bg']} ${style.stage}` : `${fill.page} ${style.stage}`} style={pageStyle}>
+    const themeColor = project.themeColor || null;
+    const activePreset = matchPresetBackground(project.background);
+
+    const editor = (
+      <div className={style.editor}>
         <div className={style.toolbar}>
           <span className={style.theme}>
             <span>{formatMessage({ id: 'QuestionnaireProjectThemeColor' })}</span>
             <ColorPicker
-              key={pickerKey}
-              value={colorDraft === null ? null : themeColor || '#4183F0'}
-              disabled={saving}
+              value={themeColor || '#4183F0'}
               disabledAlpha
               allowClear
-              destroyOnHidden
-              onChange={color => {
-                if (!color || color.cleared) {
-                  setColorDraftValue(null);
-                  return;
-                }
-                const hex = typeof color.toHexString === 'function' ? color.toHexString().slice(0, 7) : '';
-                if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
-                  return;
-                }
-                if (hex.toLowerCase() === (savedColor || '').toLowerCase()) {
-                  setColorDraftValue(undefined);
-                  return;
-                }
-                setColorDraftValue(hex);
+              onChangeComplete={color => {
+                const hex = typeof color?.toHexString === 'function' ? color.toHexString().slice(0, 7) : '';
+                /^#[0-9a-fA-F]{6}$/.test(hex) && update({ themeColor: hex });
               }}
-              onClear={() => setColorDraftValue(null)}
-              onOpenChange={open => {
-                if (open) {
-                  setColorDraftValue(undefined);
-                  return;
-                }
-                const next = colorDraftRef.current === undefined ? savedColor : colorDraftRef.current;
-                setColorDraftValue(undefined);
-                setPickerKey(key => key + 1);
-                if ((next || null) !== savedColor) {
-                  persist(Object.assign({}, project, { themeColor: next }));
-                }
-              }}
+              onClear={() => update({ themeColor: null })}
             />
           </span>
-          <Button disabled={saving} onClick={() => backgroundInput.current?.click()}>
-            {formatMessage({ id: project.background ? 'QuestionnaireProjectAppearanceChangeBackground' : 'QuestionnaireProjectAppearanceAddBackground' })}
-          </Button>
-          <Button disabled={saving} onClick={() => setAiKind('background')}>
-            {formatMessage({ id: 'QuestionnaireProjectAppearanceAiBackground' })}
-          </Button>
-          {project.background ? (
-            <Button disabled={saving} onClick={() => persist(Object.assign({}, project, { background: null }))}>
-              {formatMessage({ id: 'QuestionnaireProjectAppearanceClearBackground' })}
+          <Space.Compact>
+            <Button type="primary" disabled={busy} loading={uploading === 'background'} onClick={() => backgroundInput.current?.click()}>
+              {formatMessage({ id: 'QuestionnaireProjectAppearanceUploadBackground' })}
             </Button>
-          ) : null}
+            <Button type="primary" disabled={busy} onClick={() => setAiKind('background')}>
+              {formatMessage({ id: 'QuestionnaireProjectAppearanceAiBackground' })}
+            </Button>
+            {project.background ? (
+              <Button type="primary" disabled={busy} onClick={() => update({ background: null })}>
+                {formatMessage({ id: 'QuestionnaireProjectAppearanceClearBackground' })}
+              </Button>
+            ) : null}
+          </Space.Compact>
           {banners.length < maxBanners ? (
-            <Button disabled={saving} onClick={() => bannerInput.current?.click()}>
-              {formatMessage({ id: 'QuestionnaireProjectAppearanceAddBanner' })}
-            </Button>
-          ) : null}
-          {banners.length < maxBanners ? (
-            <Button disabled={saving} onClick={() => setAiKind('banner')}>
-              {formatMessage({ id: 'QuestionnaireProjectAppearanceAiBanner' })}
-            </Button>
+            <Space.Compact>
+              <Button type="primary" disabled={busy} loading={uploading === 'banner'} onClick={() => bannerInput.current?.click()}>
+                {formatMessage({ id: 'QuestionnaireProjectAppearanceAddBanner' })}
+              </Button>
+              <Button type="primary" disabled={busy} onClick={() => setAiKind('banner')}>
+                {formatMessage({ id: 'QuestionnaireProjectAppearanceAiBanner' })}
+              </Button>
+            </Space.Compact>
           ) : null}
           <input ref={backgroundInput} className={style.file} type="file" accept={imageAccept} onChange={onPickBackground} />
           <input ref={bannerInput} className={style.file} type="file" accept={imageAccept} onChange={onPickBanner} />
           {aiKind ? <AiImageModal kind={aiKind} projectId={projectId} ajax={ajax} apis={apis} onCancel={() => setAiKind(null)} onApply={onApplyAiImage} /> : null}
         </div>
-        <div className={`${fill.column} ${style.column}`}>
-          <BannerSlides
-            items={banners}
-            renderExtra={item => (
+        <div className={style.presets}>
+          <span className={style['presets-label']}>{formatMessage({ id: 'QuestionnairePresetBackground' })}</span>
+          <div className={style['presets-list']}>
+            {presetBackgrounds.map(item => (
               <button
+                key={item.key}
                 type="button"
-                className={style.remove}
-                disabled={saving}
-                onClick={() => persist(Object.assign({}, project, { banners: project.banners.filter(banner => banner.id !== item.id) }))}
+                title={formatMessage({ id: item.labelId })}
+                disabled={busy}
+                className={classnames(style.preset, { [style['preset-active']]: activePreset?.key === item.key })}
+                style={{ backgroundImage: `url(${presetBackgroundUrl(appUrl, item.key)})` }}
+                onClick={() => onPickPreset(item.key)}
               >
-                {formatMessage({ id: 'QuestionnaireProjectAppearanceRemove' })}
+                {uploading === item.key ? <Spin size="small" /> : null}
               </button>
-            )}
-          />
-          <header className={fill.hero}>
-            <div className={fill['hero-inner']}>
-              <div className={fill['hero-bar']}>
-                <HeroBadge locale={locale} className={fill['hero-badge']} />
-                {project.language === 'both' ? (
-                  <div className={fill.lang}>
-                    <button type="button" className={locale === 'zh-CN' ? fill['lang-on'] : ''} onClick={() => setLocale('zh-CN')}>
-                      中文
-                    </button>
-                    <button type="button" className={locale === 'en-US' ? fill['lang-on'] : ''} onClick={() => setLocale('en-US')}>
-                      EN
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              <Typography.Title level={2} className={fill['hero-title']}>
-                {pickLocaleText(project.name, locale)}
-              </Typography.Title>
-              {pickLocaleText(project.description, locale).trim() ? <div className={fill['hero-notice']}>{pickLocaleText(project.description, locale)}</div> : null}
+            ))}
+          </div>
+        </div>
+        <div className={style.viewport}>
+          {backgroundSrc ? (
+            <div className={classnames(fill.backdrop, style.backdrop)}>
+              <img src={backgroundSrc} alt="" />
             </div>
-          </header>
-          <div className={fill.content}>
-            <div className={fill.panel}>
-              <SchemaHost
-                locale={locale}
-                schema={project.schema}
-                onSubmit={() => {
-                  message.info(formatMessage({ id: 'QuestionnaireProjectAppearancePreview' }));
-                  return false;
-                }}
-              />
+          ) : null}
+          <div className={style.scroller}>
+            <div className={classnames(fill.page, style.page, { [fill['has-bg']]: !!backgroundSrc })} style={themeColor ? { '--primary-color': themeColor } : undefined}>
+              <div className={fill.column}>
+                <BannerSlides
+                  items={banners}
+                  renderExtra={item => (
+                    <button type="button" className={style.remove} disabled={busy} onClick={() => update({ banners: project.banners.filter(banner => banner.id !== item.id) })}>
+                      {formatMessage({ id: 'QuestionnaireProjectAppearanceRemove' })}
+                    </button>
+                  )}
+                />
+                <header className={fill.hero}>
+                  <div className={fill['hero-inner']}>
+                    <div className={fill['hero-bar']}>
+                      <HeroBadge locale={locale} className={fill['hero-badge']} />
+                      {project.language === 'both' ? (
+                        <div className={fill.lang}>
+                          <button type="button" className={locale === 'zh-CN' ? fill['lang-on'] : ''} onClick={() => setLocale('zh-CN')}>
+                            中文
+                          </button>
+                          <button type="button" className={locale === 'en-US' ? fill['lang-on'] : ''} onClick={() => setLocale('en-US')}>
+                            EN
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                    <Typography.Title level={2} className={fill['hero-title']}>
+                      {pickLocaleText(project.name, locale)}
+                    </Typography.Title>
+                    {pickLocaleText(project.description, locale).trim() ? <div className={fill['hero-notice']}>{pickLocaleText(project.description, locale)}</div> : null}
+                  </div>
+                </header>
+                <div className={fill.content}>
+                  <div className={fill.panel}>
+                    <SchemaHost
+                      locale={locale}
+                      schema={project.schema}
+                      onSubmit={() => {
+                        message.info(formatMessage({ id: 'QuestionnaireProjectAppearancePreview' }));
+                        return false;
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     );
     if (!themeColor) {
-      return page;
+      return editor;
     }
-    return <ConfigProvider theme={{ token: { colorPrimary: themeColor } }}>{page}</ConfigProvider>;
+    return <ConfigProvider theme={{ token: { colorPrimary: themeColor } }}>{editor}</ConfigProvider>;
   })
 );
 

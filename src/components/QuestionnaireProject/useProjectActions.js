@@ -86,13 +86,23 @@ const useProjectActions = ({ ajax, apis, appUrl, formModal, modal, message, form
   };
 
   const openAppearance = item => {
+    const saveRef = { current: null };
     modal({
       title: formatMessage({ id: 'QuestionnaireProjectAppearance' }),
       size: 'large',
       zIndex: 1200,
-      footer: null,
       noPadding: true,
-      children: <ProjectAppearance projectId={item.id} />
+      bodyScroll: false,
+      cancelText: formatMessage({ id: 'QuestionnaireAiImageCancel' }),
+      confirmText: formatMessage({ id: 'QuestionnaireProjectAppearanceSave' }),
+      onConfirm: async () => {
+        const saved = saveRef.current ? await saveRef.current() : false;
+        if (!saved) {
+          return false;
+        }
+        onChanged && onChanged();
+      },
+      children: <ProjectAppearance projectId={item.id} saveRef={saveRef} />
     });
     window.setTimeout(() => {
       document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
