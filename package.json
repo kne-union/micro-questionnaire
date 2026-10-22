@@ -1,6 +1,6 @@
 {
   "name": "@kne/micro-questionnaire",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "问卷系统",
   "scripts": {
     "init": "node scripts/post-init.js && npm run init-server && husky && npx @kne/npm-tools deployPrompts fastify-project",
