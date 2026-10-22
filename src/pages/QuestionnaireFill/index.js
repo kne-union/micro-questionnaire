@@ -5,6 +5,8 @@ import { useParams } from 'react-router-dom';
 import { useIntl } from '@kne/react-intl';
 import withLocale from '@components/Questionnaire/withLocale';
 import BannerSlides from '@components/Questionnaire/BannerSlides';
+import SchemaHost from '@components/Questionnaire/SchemaHost';
+import { pickLocaleText } from '../../commons/schemaLanguages';
 import style from './style.module.scss';
 
 const storageKey = code => `questionnaire-lang:${code}`;
@@ -34,16 +36,6 @@ const resolveFillLocale = (language, code) => {
   return browserFillLocale();
 };
 
-const fileSrc = (staticUrl, url) => {
-  if (!url) {
-    return '';
-  }
-  if (/^https?:\/\//.test(url)) {
-    return url;
-  }
-  return `${staticUrl || ''}${url}`;
-};
-
 const FillBackdrop = ({ src }) => {
   if (!src) {
     return null;
@@ -55,12 +47,12 @@ const FillBackdrop = ({ src }) => {
   );
 };
 
-const FillContent = withLocale(({ staticUrl, context, onSubmit, done, onSwitch }) => {
+const FillContent = withLocale(({ appUrl, context, onSubmit, done, onSwitch }) => {
   const { formatMessage, locale } = useIntl();
   const { message } = App.useApp();
   const badge = formatMessage({ id: 'QuestionnaireFillBadge' });
-  const backgroundSrc = fileSrc(staticUrl, context.background?.url);
-  const bannerList = (context.banners || []).map(item => Object.assign({}, item, { src: fileSrc(staticUrl, item.url) })).filter(item => item.src);
+  const backgroundSrc = appUrl.api(context.background?.url);
+  const bannerList = (context.banners || []).map(item => Object.assign({}, item, { src: appUrl.api(item.url) })).filter(item => item.src);
   const submit = async answers => {
     const ok = await onSubmit(answers);
     if (ok === false) {
@@ -90,9 +82,9 @@ const FillContent = withLocale(({ staticUrl, context, onSubmit, done, onSwitch }
             ) : null}
           </div>
           <Typography.Title level={2} className={style['hero-title']}>
-            {context.name}
+            {pickLocaleText(context.name, locale)}
           </Typography.Title>
-          {(context.description || '').trim() ? <div className={style['hero-notice']}>{context.description}</div> : null}
+          {pickLocaleText(context.description, locale).trim() ? <div className={style['hero-notice']}>{pickLocaleText(context.description, locale)}</div> : null}
         </div>
       </header>
       <div className={style.content}>
@@ -115,27 +107,12 @@ const FillContent = withLocale(({ staticUrl, context, onSubmit, done, onSwitch }
   return <ConfigProvider theme={{ token: { colorPrimary: context.themeColor } }}>{page}</ConfigProvider>;
 });
 
-const SchemaHost = createWithRemoteLoader({
-  modules: ['components-thirdparty:FormCreator@SchemaRenderer']
-})(({ remoteModules, locale, schema, onSubmit }) => {
-  const [SchemaRenderer] = remoteModules;
-  return (
-    <SchemaRenderer
-      locale={locale}
-      schema={schema}
-      formProps={{
-        onSubmit
-      }}
-    />
-  );
-});
-
 const QuestionnaireFill = createWithRemoteLoader({
   modules: ['components-core:Global@usePreset']
 })(
   withLocale(({ remoteModules }) => {
     const [usePreset] = remoteModules;
-    const { ajax, apis, staticUrl } = usePreset();
+    const { ajax, apis, appUrl } = usePreset();
     const { code } = useParams();
     const { formatMessage } = useIntl();
     const [loading, setLoading] = useState(true);
@@ -199,7 +176,7 @@ const QuestionnaireFill = createWithRemoteLoader({
 
     return (
       <FillContent
-        staticUrl={staticUrl}
+        appUrl={appUrl}
         locale={fillLocale}
         context={context}
         done={done}

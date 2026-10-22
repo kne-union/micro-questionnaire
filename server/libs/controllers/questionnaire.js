@@ -12,6 +12,7 @@ const listQuery = {
     templateId: { type: 'string' },
     status: { type: 'string' },
     kind: { type: 'string' },
+    locale: { type: 'string' },
     updatedAt: {},
     filter: { type: 'object', additionalProperties: true }
   }
@@ -31,6 +32,7 @@ const readFilterValue = (query, name) => {
 const toListParams = query => ({
   perPage: query.perPage || 20,
   currentPage: query.currentPage || 1,
+  locale: query.locale,
   filter: {
     keyword: readFilterValue(query, 'keyword'),
     templateId: readFilterValue(query, 'templateId'),
@@ -53,7 +55,7 @@ module.exports = fp(async (fastify, options) => {
     `${options.prefix}/questionnaire/template/detail`,
     {
       onRequest: userAuth,
-      schema: { summary: '问卷模版详情', querystring: { type: 'object', properties: { id: idType }, required: ['id'] } }
+      schema: { summary: '问卷模版详情', querystring: { type: 'object', properties: { id: idType, locale: { type: 'string' } }, required: ['id'] } }
     },
     async request => services.questionnaire.getTemplateDetail(request.userInfo, request.query)
   );
@@ -70,6 +72,7 @@ module.exports = fp(async (fastify, options) => {
             id: idType,
             name: { type: 'string' },
             description: { type: 'string' },
+            languages: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string', enum: ['zh-CN', 'en-US'] } },
             schema: { type: 'object' }
           }
         }
@@ -98,6 +101,7 @@ module.exports = fp(async (fastify, options) => {
           properties: {
             source: { type: 'string', minLength: 1, maxLength: 5000 },
             locale: { type: 'string', enum: ['zh-CN', 'en-US'] },
+            languages: { type: 'array', items: { type: 'string', enum: ['zh-CN', 'en-US'] } },
             currentSchema: { type: 'object' }
           },
           required: ['source']
@@ -130,8 +134,8 @@ module.exports = fp(async (fastify, options) => {
           type: 'object',
           properties: {
             templateId: idType,
-            name: { type: 'string' },
-            description: { type: 'string' },
+            name: {},
+            description: {},
             language: { type: 'string', enum: ['zh-CN', 'en-US', 'both'] },
             background: {},
             banners: {},
@@ -164,6 +168,86 @@ module.exports = fp(async (fastify, options) => {
       }
     },
     async request => services.questionnaire.updateAppearance(request.userInfo, request.body)
+  );
+
+  fastify.post(
+    `${options.prefix}/questionnaire/project/poster/generate`,
+    {
+      onRequest: userAuth,
+      schema: {
+        summary: 'AI 生成问卷分享海报 HTML（二维码、背景图以 {{qrcode}}、{{background}} 占位）',
+        body: {
+          type: 'object',
+          properties: {
+            id: idType,
+            width: { type: 'number', minimum: 200, maximum: 4000 },
+            height: { type: 'number', minimum: 200, maximum: 4000 },
+            requirement: { type: 'string', maxLength: 2000 },
+            locale: { type: 'string', enum: ['zh-CN', 'en-US'] }
+          },
+          required: ['id', 'width', 'height']
+        }
+      }
+    },
+    async request => services.questionnaire.generatePoster(request.userInfo, request.body)
+  );
+
+  fastify.get(
+    `${options.prefix}/questionnaire/project/poster/list`,
+    {
+      onRequest: userAuth,
+      schema: { summary: '问卷已保存的 AI 海报列表（最新在前，最多 20 张）', querystring: { type: 'object', properties: { id: idType }, required: ['id'] } }
+    },
+    async request => services.questionnaire.getPosterList(request.userInfo, request.query)
+  );
+
+  fastify.post(
+    `${options.prefix}/questionnaire/project/poster/remove`,
+    {
+      onRequest: userAuth,
+      schema: { summary: '删除已保存的 AI 海报', body: { type: 'object', properties: { id: idType }, required: ['id'] } }
+    },
+    async request => services.questionnaire.removePoster(request.userInfo, request.body)
+  );
+
+  fastify.post(
+    `${options.prefix}/questionnaire/project/poster/background`,
+    {
+      onRequest: userAuth,
+      schema: {
+        summary: '保存默认海报背景图，传空数组恢复使用填写页背景图',
+        body: {
+          type: 'object',
+          properties: {
+            id: idType,
+            background: { type: 'array', items: { type: 'object', additionalProperties: true } }
+          },
+          required: ['id']
+        }
+      }
+    },
+    async request => services.questionnaire.savePosterBackground(request.userInfo, request.body)
+  );
+
+  fastify.post(
+    `${options.prefix}/questionnaire/project/appearance/generate`,
+    {
+      onRequest: userAuth,
+      schema: {
+        summary: 'AI 生成填写页背景图或 Banner 的 HTML（前端渲染为图片后上传）',
+        body: {
+          type: 'object',
+          properties: {
+            id: idType,
+            kind: { type: 'string', enum: ['background', 'banner'] },
+            requirement: { type: 'string', maxLength: 2000 },
+            locale: { type: 'string', enum: ['zh-CN', 'en-US'] }
+          },
+          required: ['id', 'kind']
+        }
+      }
+    },
+    async request => services.questionnaire.generateAppearanceImage(request.userInfo, request.body)
   );
 
   fastify.post(
@@ -213,7 +297,7 @@ module.exports = fp(async (fastify, options) => {
     `${options.prefix}/questionnaire/project/export`,
     {
       onRequest: userAuth,
-      schema: { summary: '下载问卷结果', querystring: { type: 'object', properties: { id: idType }, required: ['id'] } }
+      schema: { summary: '下载问卷结果', querystring: { type: 'object', properties: { id: idType, locale: { type: 'string' } }, required: ['id'] } }
     },
     async (request, reply) => {
       const { file, contentType } = await services.questionnaire.exportProject(request.userInfo, request.query);

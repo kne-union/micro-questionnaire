@@ -21,6 +21,11 @@ module.exports = ({ DataTypes }) => {
         defaultValue: {},
         comment: 'FormCreator schema'
       },
+      languages: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: '支持的语言，如 ["zh-CN","en-US"]，为空按中文'
+      },
       builtinKey: {
         type: DataTypes.STRING,
         allowNull: true,

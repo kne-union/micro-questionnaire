@@ -1,6 +1,6 @@
 {
   "name": "@kne/micro-questionnaire",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "问卷系统",
   "scripts": {
     "init": "node scripts/post-init.js && npm run init-server && husky && npx @kne/npm-tools deployPrompts fastify-project",
@@ -95,6 +95,7 @@
     "@kne/responsive-utils": "^0.1.16",
     "@kne/system-layout": "^0.2.2",
     "@kne/token-storage": "^1.0.0",
-    "@kne/use-ref-callback": "^0.1.2"
+    "@kne/use-ref-callback": "^0.1.2",
+    "html-to-image": "^1.11.13"
   }
 }

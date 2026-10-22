@@ -1,20 +1,22 @@
 import { createWithRemoteLoader } from '@kne/remote-loader';
 import { Page, useIsMobile, useScrollElement } from '@kne/system-layout';
 import { App, Button } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from '@kne/react-intl';
 import { useLocation, useNavigate } from 'react-router-dom';
 import withLocale from '@components/Questionnaire/withLocale';
 import { renderListCards } from '@components/Questionnaire/listCards';
+import {
+  defaultProjectLanguage,
+  isProjectBilingual,
+  normalizeTemplateLanguages,
+  pickLocaleText,
+  projectLanguageValues
+} from '../../commons/schemaLanguages';
+import { packProjectCreatePayload } from './projectForm';
 import useProjectActions from './useProjectActions';
 
 const imageAccept = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-
-const appearanceData = formData => ({
-  background: formData.background || [],
-  banners: formData.banners || [],
-  themeColor: formData.themeColor || null
-});
 
 const appearanceFields = (FormInfo, formatMessage) => {
   const { Upload, ColorPicker } = FormInfo.fields;
@@ -34,9 +36,38 @@ const appearanceFields = (FormInfo, formatMessage) => {
   ];
 };
 
+const languageOptionMeta = {
+  'zh-CN': 'QuestionnaireProjectLanguageZh',
+  'en-US': 'QuestionnaireProjectLanguageEn',
+  both: 'QuestionnaireProjectLanguageBoth'
+};
+
+export { packProjectCreatePayload } from './projectForm';
+
 export const ProjectCreateForm = ({ FormInfo, apis, formatMessage, onAddTemplate }) => {
+  const { locale } = useIntl();
   const { Input, TextArea, RadioGroup, SuperSelect } = FormInfo.fields;
-  const { openApi } = FormInfo.useFormContext();
+  const { openApi, formData } = FormInfo.useFormContext();
+  const template = formData?.templateId && typeof formData.templateId === 'object' ? formData.templateId : null;
+  const templateLanguages = normalizeTemplateLanguages(template?.languages);
+  const languageOptions = useMemo(() => {
+    const values = template ? projectLanguageValues(template.languages) : ['zh-CN', 'en-US', 'both'];
+    return values.map(value => ({
+      value,
+      label: formatMessage({ id: languageOptionMeta[value] })
+    }));
+  }, [formatMessage, template]);
+  const bilingual = isProjectBilingual(templateLanguages, formData?.language);
+
+  useEffect(() => {
+    if (!template) {
+      return;
+    }
+    const allowed = projectLanguageValues(template.languages);
+    if (!allowed.includes(formData?.language)) {
+      openApi.setField({ name: 'language', value: defaultProjectLanguage(template.languages) });
+    }
+  }, [formData?.language, openApi, template]);
 
   return (
     <FormInfo
@@ -51,7 +82,7 @@ export const ProjectCreateForm = ({ FormInfo, apis, formatMessage, onAddTemplate
           valueKey="id"
           labelKey="name"
           api={Object.assign({}, apis.questionnaire.templateList, {
-            params: { perPage: 20, currentPage: 1 }
+            params: { perPage: 20, currentPage: 1, locale }
           })}
           pagination={{ paramsType: 'params' }}
           getSearchProps={({ searchText }) => (searchText ? { keyword: searchText } : {})}
@@ -65,6 +96,20 @@ export const ProjectCreateForm = ({ FormInfo, apis, formatMessage, onAddTemplate
             ),
             total: data?.totalCount
           })}
+          onChange={value => {
+            if (!value || typeof value !== 'object') {
+              return;
+            }
+            const nextLanguage = defaultProjectLanguage(value.languages);
+            const fields = [{ name: 'language', value: nextLanguage }];
+            if (!formData?.name && value.name) {
+              fields.push({ name: 'name', value: value.name });
+            }
+            if (!formData?.description && value.description) {
+              fields.push({ name: 'description', value: value.description });
+            }
+            openApi.setFields(fields);
+          }}
           footer={({ close, reload }) => (
             <Button
               type="link"
@@ -80,21 +125,37 @@ export const ProjectCreateForm = ({ FormInfo, apis, formatMessage, onAddTemplate
             </Button>
           )}
         />,
-        <Input key="name" name="name" label={formatMessage({ id: 'QuestionnaireProjectName' })} rule="REQ LEN-0-100" />,
-        <TextArea key="description" name="description" label={formatMessage({ id: 'QuestionnaireDescription' })} rule="LEN-0-500" />,
-        <RadioGroup
-          key="language"
-          name="language"
-          label={formatMessage({ id: 'QuestionnaireProjectLanguage' })}
-          rule="REQ"
-          options={[
-            { label: formatMessage({ id: 'QuestionnaireProjectLanguageZh' }), value: 'zh-CN' },
-            { label: formatMessage({ id: 'QuestionnaireProjectLanguageEn' }), value: 'en-US' },
-            { label: formatMessage({ id: 'QuestionnaireProjectLanguageBoth' }), value: 'both' }
-          ]}
+        <RadioGroup key="language" name="language" label={formatMessage({ id: 'QuestionnaireProjectLanguage' })} rule="REQ" options={languageOptions} />,
+        <Input
+          key="name"
+          name="name"
+          label={bilingual ? `${formatMessage({ id: 'QuestionnaireProjectName' })}（${formatMessage({ id: 'QuestionnaireLanguageZh' })}）` : formatMessage({ id: 'QuestionnaireProjectName' })}
+          rule="REQ LEN-0-100"
         />,
+        bilingual ? (
+          <Input
+            key="nameEnUS"
+            name="nameEnUS"
+            label={`${formatMessage({ id: 'QuestionnaireProjectName' })}（${formatMessage({ id: 'QuestionnaireLanguageEn' })}）`}
+            rule="REQ LEN-0-100"
+          />
+        ) : null,
+        <TextArea
+          key="description"
+          name="description"
+          label={bilingual ? `${formatMessage({ id: 'QuestionnaireDescription' })}（${formatMessage({ id: 'QuestionnaireLanguageZh' })}）` : formatMessage({ id: 'QuestionnaireDescription' })}
+          rule="LEN-0-500"
+        />,
+        bilingual ? (
+          <TextArea
+            key="descriptionEnUS"
+            name="descriptionEnUS"
+            label={`${formatMessage({ id: 'QuestionnaireDescription' })}（${formatMessage({ id: 'QuestionnaireLanguageEn' })}）`}
+            rule="LEN-0-500"
+          />
+        ) : null,
         ...appearanceFields(FormInfo, formatMessage)
-      ]}
+      ].filter(Boolean)}
     />
   );
 };
@@ -105,8 +166,8 @@ const QuestionnaireProject = createWithRemoteLoader({
   withLocale(({ remoteModules }) => {
     const [BizUnit, TablePageRender, usePreset, FormInfo, Filter, useModal] = remoteModules;
     const { SuperSelectFilterItem, DateRangePickerFilterItem } = Filter.fields;
-    const { formatMessage } = useIntl();
-    const { apis, ajax } = usePreset();
+    const { formatMessage, locale } = useIntl();
+    const { apis, ajax, appUrl } = usePreset();
     const formModal = FormInfo.useFormModal();
     const modal = useModal();
     const { message } = App.useApp();
@@ -120,6 +181,7 @@ const QuestionnaireProject = createWithRemoteLoader({
     const { openCreate, openCreateTemplate, getActionList } = useProjectActions({
       ajax,
       apis,
+      appUrl,
       formModal,
       modal,
       message,
@@ -145,16 +207,10 @@ const QuestionnaireProject = createWithRemoteLoader({
         isNext
         name="questionnaire-project-list"
         apis={{
-          list: apis.questionnaire.projectList,
+          list: Object.assign({}, apis.questionnaire.projectList, { params: { locale } }),
           create: ({ formData }) =>
             Object.assign({}, apis.questionnaire.projectCreate, {
-              data: {
-                templateId: formData.templateId?.id || formData.templateId,
-                name: formData.name,
-                description: formData.description || '',
-                language: formData.language || 'both',
-                ...appearanceData(formData)
-              }
+              data: packProjectCreatePayload(formData)
             })
         }}
         getColumns={() => [
@@ -162,12 +218,13 @@ const QuestionnaireProject = createWithRemoteLoader({
             name: 'name',
             title: formatMessage({ id: 'QuestionnaireProjectName' }),
             renderType: 'main',
-            onClick: ({ colItem }) => navigate(`/project/${colItem.id}/results`)
+            getValueOf: item => pickLocaleText(item.name, locale)
           },
           {
             name: 'description',
             title: formatMessage({ id: 'QuestionnaireDescription' }),
-            renderType: 'description'
+            renderType: 'description',
+            getValueOf: item => pickLocaleText(item.description, locale)
           },
           {
             name: 'language',
@@ -188,8 +245,7 @@ const QuestionnaireProject = createWithRemoteLoader({
           },
           {
             name: 'responseCount',
-            title: formatMessage({ id: 'QuestionnaireProjectResponseCount' }),
-            getValueOf: item => item.responseCount || 0
+            title: formatMessage({ id: 'QuestionnaireProjectResponseCount' })
           },
           {
             name: 'updatedAt',
@@ -207,9 +263,8 @@ const QuestionnaireProject = createWithRemoteLoader({
                 single: true,
                 valueKey: 'id',
                 labelKey: 'name',
-                interceptor: Filter.singleSelectInterceptor,
                 api: Object.assign({}, apis.questionnaire.templateList, {
-                  params: { perPage: 20, currentPage: 1 }
+                  params: { perPage: 20, currentPage: 1, locale }
                 }),
                 pagination: { paramsType: 'params' },
                 getSearchProps: ({ searchText }) => (searchText ? { keyword: searchText } : {})

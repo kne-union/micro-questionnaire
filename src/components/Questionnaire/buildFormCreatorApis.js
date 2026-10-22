@@ -10,11 +10,11 @@ const unwrapPayload = resData => {
   return resData;
 };
 
-const buildFormCreatorApis = ({ ajax, templateApis }) => ({
+const buildFormCreatorApis = ({ ajax, templateApis, locale }) => ({
   list: async () => {
     const { data: resData } = await ajax(
       Object.assign({}, templateApis.templateList, {
-        params: { perPage: 1000, currentPage: 1 }
+        params: { perPage: 1000, currentPage: 1, locale }
       })
     );
     const payload = unwrapPayload(resData);
@@ -28,7 +28,7 @@ const buildFormCreatorApis = ({ ajax, templateApis }) => ({
     const id = params?.id || data?.id;
     const { data: resData } = await ajax(
       Object.assign({}, templateApis.templateDetail, {
-        params: { id }
+        params: { id, locale }
       })
     );
     const payload = unwrapPayload(resData);

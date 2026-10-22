@@ -3,6 +3,7 @@ import { App, Button } from 'antd';
 import { useIntl } from '@kne/react-intl';
 import withLocale from './withLocale';
 import AiGenerateFormInner from './AiGenerateFormInner';
+import { normalizeTemplateLanguages } from '../../commons/schemaLanguages';
 
 const hasFields = schema => (schema?.blocks || []).some(block => (block?.list || []).length > 0);
 
@@ -18,7 +19,8 @@ const AiGenerateButton = createWithRemoteLoader({
     const { message } = App.useApp();
 
     const handleClick = () => {
-      const schema = openApi.getFormData()?.[name];
+      const currentData = openApi.getFormData() || {};
+      const schema = currentData[name];
       const isModifyMode = hasFields(schema);
       formModal({
         title: formatMessage({ id: 'QuestionnaireAiGenerate' }),
@@ -31,6 +33,7 @@ const AiGenerateButton = createWithRemoteLoader({
                 data: {
                   source: formData.source,
                   locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
+                  languages: normalizeTemplateLanguages(currentData.languages),
                   currentSchema: isModifyMode ? schema : undefined
                 }
               })

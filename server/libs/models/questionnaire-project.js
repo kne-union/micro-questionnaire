@@ -52,6 +52,11 @@ module.exports = ({ DataTypes }) => {
         allowNull: true,
         comment: '填写页主题色，#RRGGBB'
       },
+      posterBackground: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: '默认分享海报背景图 { id, filename }，为空时用填写页背景图'
+      },
       code: {
         type: DataTypes.STRING,
         comment: '填写页短码'

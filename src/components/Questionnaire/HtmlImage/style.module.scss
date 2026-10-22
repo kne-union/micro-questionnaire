@@ -1,0 +1,18 @@
+.preview-box {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 16px 0;
+  border-radius: 12px;
+  background: #f6f7f9;
+}
+
+.preview-frame {
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.canvas {
+  overflow: hidden;
+  transform-origin: 0 0;
+}

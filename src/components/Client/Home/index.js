@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createWithRemoteLoader } from '@kne/remote-loader';
 import { Page, useIsMobile, useScrollElement } from '@kne/system-layout';
 import { App, Button, Skeleton } from 'antd';
-import { BarChartOutlined, FileTextOutlined, PlusOutlined, RightOutlined, SendOutlined } from '@ant-design/icons';
+import { BarChartOutlined, FileTextOutlined, GlobalOutlined, PlusOutlined, RightOutlined, SendOutlined } from '@ant-design/icons';
 import { useIntl } from '@kne/react-intl';
 import { useNavigate } from 'react-router-dom';
 import classnames from 'classnames';
@@ -11,6 +11,7 @@ import withQuestionnaireLocale from '@components/Questionnaire/withLocale';
 import { renderListCards } from '@components/Questionnaire/listCards';
 import { ProjectCreateForm } from '@components/QuestionnaireProject';
 import useProjectActions from '@components/QuestionnaireProject/useProjectActions';
+import schemaLanguages, { normalizeTemplateLanguages } from '../../../commons/schemaLanguages';
 import style from './style.module.scss';
 
 const requestTotal = async (ajax, api, params) => {
@@ -18,7 +19,7 @@ const requestTotal = async (ajax, api, params) => {
   return resData.code === 0 ? resData.data?.totalCount || 0 : null;
 };
 
-const useHomeData = ({ ajax, apis, refreshKey }) => {
+const useHomeData = ({ ajax, apis, refreshKey, locale }) => {
   const [stats, setStats] = useState(null);
   const [templates, setTemplates] = useState(null);
   const presetRef = useRef({ ajax, apis });
@@ -33,13 +34,13 @@ const useHomeData = ({ ajax, apis, refreshKey }) => {
         active && setStats({ total, open, closed, customTemplates });
       }
     );
-    ajax(Object.assign({}, templateList, { params: { perPage: 4, currentPage: 1 } })).then(({ data: resData }) => {
+    ajax(Object.assign({}, templateList, { params: { perPage: 4, currentPage: 1, locale } })).then(({ data: resData }) => {
       active && setTemplates(resData.code === 0 ? resData.data?.pageData || [] : []);
     });
     return () => {
       active = false;
     };
-  }, [refreshKey]);
+  }, [refreshKey, locale]);
 
   return { stats, templates };
 };
@@ -65,8 +66,8 @@ const Home = createWithRemoteLoader({
   withLocale(
     withQuestionnaireLocale(({ remoteModules }) => {
       const [BizUnit, TablePageRender, usePreset, FormInfo, useModal] = remoteModules;
-      const { apis, ajax } = usePreset();
-      const { formatMessage } = useIntl();
+      const { apis, ajax, appUrl } = usePreset();
+      const { formatMessage, locale } = useIntl();
       const formModal = FormInfo.useFormModal();
       const modal = useModal();
       const { message } = App.useApp();
@@ -75,6 +76,7 @@ const Home = createWithRemoteLoader({
       const { openCreate, getActionList } = useProjectActions({
         ajax,
         apis,
+        appUrl,
         formModal,
         modal,
         message,
@@ -83,7 +85,7 @@ const Home = createWithRemoteLoader({
         onChanged: () => setRefreshKey(key => key + 1),
         renderCreateForm: onAddTemplate => <ProjectCreateForm FormInfo={FormInfo} apis={apis} formatMessage={formatMessage} onAddTemplate={onAddTemplate} />
       });
-      const { stats, templates } = useHomeData({ ajax, apis, refreshKey });
+      const { stats, templates } = useHomeData({ ajax, apis, refreshKey, locale });
       const getScrollElement = useScrollElement();
       const isMobile = useIsMobile();
 
@@ -204,7 +206,7 @@ const Home = createWithRemoteLoader({
               <div className={style.templates}>
                 {templates
                   ? templates.map(item => (
-                      <button key={item.id} type="button" className={style.template} onClick={() => openCreate({ templateId: item.id, templateName: item.name, name: item.name, description: item.description })}>
+                      <button key={item.id} type="button" className={style.template} onClick={() => openCreate({ templateId: item.id, templateName: item.name, name: item.name, description: item.description, languages: item.languages })}>
                         <span className={style.templateHead}>
                           <span className={style.templateIcon}>
                             <FileTextOutlined />
@@ -212,6 +214,13 @@ const Home = createWithRemoteLoader({
                           <span className={classnames(style.templateTag, item.builtinKey && style.templateTagBuiltin)}>{formatMessage({ id: item.builtinKey ? 'QuestionnaireTemplateDefault' : 'QuestionnaireTemplateCustom' })}</span>
                         </span>
                         <span className={style.templateName}>{item.name}</span>
+                        <span className={style.templateLanguages}>
+                          <GlobalOutlined />
+                          {schemaLanguages
+                            .filter(language => normalizeTemplateLanguages(item.languages).includes(language.value))
+                            .map(language => formatMessage({ id: language.labelId }))
+                            .join(' / ')}
+                        </span>
                         <span className={style.templateDesc}>{item.description || formatMessage({ id: 'ClientHomeTemplateNoDescription' })}</span>
                         <span className={style.templateAction}>
                           {formatMessage({ id: 'ClientHomeUseTemplate' })}

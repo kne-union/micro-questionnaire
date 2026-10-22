@@ -33,6 +33,43 @@ describe('questionnaire excel', () => {
     });
   });
 
+  describe('双语文案测试', () => {
+    const schema = {
+      blocks: [
+        {
+          kind: 'formInfo',
+          title: { 'zh-CN': '基本信息', 'en-US': 'Basic Info' },
+          list: [
+            {
+              name: 'gender',
+              type: 'RadioGroup',
+              label: { 'zh-CN': '性别', 'en-US': 'Gender' },
+              props: { options: [{ label: { 'zh-CN': '男', 'en-US': 'Male' }, value: 'male' }, { label: '其他', value: 'other' }] }
+            }
+          ]
+        }
+      ]
+    };
+
+    it('should use the requested locale and fall back to zh-CN', () => {
+      const [column] = buildQuestionnaireColumns(schema, 'en-US');
+      expect(column.header).to.equal('Basic Info-Gender');
+      expect(column.getValue({ gender: 'male' })).to.equal('Male');
+      expect(column.getValue({ gender: 'other' })).to.equal('其他');
+    });
+
+    it('should fall back to en-US when zh-CN is missing', () => {
+      const [column] = buildQuestionnaireColumns({ blocks: [{ kind: 'formInfo', list: [{ name: 'a', type: 'Input', label: { 'en-US': 'Only English' } }] }] }, 'zh-CN');
+      expect(column.header).to.equal('Only English');
+    });
+
+    it('should default to zh-CN', () => {
+      const [column] = buildQuestionnaireColumns(schema);
+      expect(column.header).to.equal('基本信息-性别');
+      expect(column.getValue({ gender: 'male' })).to.equal('男');
+    });
+  });
+
   describe('导出列构建测试', () => {
     it('should build columns from formInfo blocks and skip hidden fields', () => {
       const columns = buildQuestionnaireColumns({
