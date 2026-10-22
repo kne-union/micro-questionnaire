@@ -1,6 +1,6 @@
 import { createWithRemoteLoader } from '@kne/remote-loader';
 import { App, Alert, Button, Input, InputNumber, Popconfirm, QRCode, Segmented, Select, Space, Spin, Tabs } from 'antd';
-import { DeleteOutlined } from '@ant-design/icons';
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import classnames from 'classnames';
@@ -9,6 +9,7 @@ import { useIsMobile } from '@kne/responsive-utils';
 import withLocale from '@components/Questionnaire/withLocale';
 import { HtmlImagePreview, exportHtmlImage, renderSafeHtml } from '@components/Questionnaire/HtmlImage';
 import { pickLocaleText } from '../../../commons/schemaLanguages';
+import presetBackgrounds, { matchPresetBackground, presetBackgroundUrl, uploadPresetBackground } from '../../../commons/presetBackgrounds';
 import { buildDefaultPosterHtml } from './posterHtml';
 import style from './style.module.scss';
 
@@ -120,6 +121,7 @@ const ProjectShare = createWithRemoteLoader({
     const [exporting, setExporting] = useState(false);
     const [posterBackground, setPosterBackground] = useState(null);
     const [savingBackground, setSavingBackground] = useState(false);
+    const [pendingBackground, setPendingBackground] = useState(null);
 
     useEffect(() => {
       const canvas = qrcodeRef.current?.querySelector('canvas');
@@ -156,7 +158,7 @@ const ProjectShare = createWithRemoteLoader({
     const projectBackgroundData = useImageDataUrl(ajax, project?.background?.id);
     const posterBackgroundData = useImageDataUrl(ajax, posterBackground?.id);
     const backgroundSrc = projectBackgroundData || appUrl.api(project?.background?.url);
-    const defaultBackgroundSrc = posterBackground?.url ? posterBackgroundData || appUrl.api(posterBackground.url) : backgroundSrc;
+    const defaultBackgroundSrc = posterBackground?.url ? posterBackgroundData || appUrl.api(posterBackground.url) : null;
     const aiPoster = posters.find(item => item.id === selectedId) || posters[0] || null;
 
     const posterHtml = useMemo(() => {
@@ -244,6 +246,36 @@ const ProjectShare = createWithRemoteLoader({
         }
       } finally {
         setSavingBackground(false);
+      }
+    };
+
+    const pageBackground = project?.background?.url ? project.background : null;
+    const posterPreset = matchPresetBackground(posterBackground);
+    const posterPage = posterBackground && pageBackground && String(pageBackground.id) === String(posterBackground.id) ? pageBackground : null;
+    const backgroundOptions = [{ key: 'none', labelId: 'QuestionnaireSharePosterBackgroundNone', src: null }]
+      .concat(pageBackground ? [{ key: 'page', labelId: 'QuestionnaireSharePosterBackgroundPage', image: pageBackground, src: appUrl.api(pageBackground.url) }] : [])
+      .concat(posterBackground?.url && !posterPreset && !posterPage ? [{ key: 'custom', labelId: 'QuestionnaireSharePosterBackgroundCustom', image: posterBackground, src: appUrl.api(posterBackground.url) }] : [])
+      .concat(presetBackgrounds.map(item => ({ key: `preset-${item.key}`, labelId: item.labelId, preset: item.key, src: presetBackgroundUrl(appUrl, item.key) })));
+    const selectedBackgroundKey = !posterBackground ? 'none' : posterPage ? 'page' : posterPreset ? `preset-${posterPreset.key}` : 'custom';
+
+    const selectBackground = async option => {
+      if (option.key === selectedBackgroundKey) {
+        return;
+      }
+      setPendingBackground(option.key);
+      try {
+        if (option.key === 'none') {
+          await savePosterBackground([]);
+          return;
+        }
+        const image = option.preset ? await uploadPresetBackground({ appUrl, apis, key: option.preset }) : option.image;
+        if (!image) {
+          message.error(formatMessage({ id: 'QuestionnaireProjectAppearanceUploadFailed' }));
+          return;
+        }
+        await savePosterBackground([{ id: image.id, filename: image.filename }]);
+      } finally {
+        setPendingBackground(null);
       }
     };
 
@@ -340,28 +372,29 @@ const ProjectShare = createWithRemoteLoader({
         {mode === 'default' ? (
           <div className={style.field}>
             <span className={style.label}>{formatMessage({ id: 'QuestionnaireSharePosterBackground' })}</span>
-            <div className={style.background}>
-              <div
-                className={style['background-thumb']}
-                style={defaultBackgroundSrc ? { backgroundImage: `url(${defaultBackgroundSrc})` } : { background: `linear-gradient(160deg, ${project?.themeColor || '#4183F0'} 0%, #1f2a44 100%)` }}
-              />
-              <div className={style['background-text']}>
-                <div className={style.tip}>
-                  {formatMessage({
-                    id: posterBackground ? 'QuestionnaireSharePosterBackgroundCustom' : backgroundSrc ? 'QuestionnaireSharePosterBackgroundTip' : 'QuestionnaireSharePosterBackgroundNone'
-                  })}
-                </div>
-                <Space size={4} wrap>
-                  <Button size="small" loading={savingBackground} onClick={() => backgroundInput.current?.click()}>
-                    {formatMessage({ id: posterBackground ? 'QuestionnaireSharePosterBackgroundChange' : 'QuestionnaireSharePosterBackgroundUpload' })}
-                  </Button>
-                  {posterBackground ? (
-                    <Button size="small" type="text" disabled={savingBackground} onClick={() => savePosterBackground([])}>
-                      {formatMessage({ id: 'QuestionnaireSharePosterBackgroundReset' })}
-                    </Button>
-                  ) : null}
-                </Space>
-              </div>
+            <div className={style['background-list']}>
+              {backgroundOptions.map(option => (
+                <button
+                  key={option.key}
+                  type="button"
+                  title={formatMessage({ id: option.labelId })}
+                  disabled={savingBackground || !!pendingBackground}
+                  className={classnames(style['background-option'], { [style['background-active']]: option.key === selectedBackgroundKey })}
+                  style={option.src ? { backgroundImage: `url(${option.src})` } : { background: `linear-gradient(135deg, ${project?.themeColor || '#4183F0'} 0%, ${project?.themeColor || '#4183F0'} 35%, #1f2a44 100%)` }}
+                  onClick={() => selectBackground(option)}
+                >
+                  {pendingBackground === option.key ? <Spin size="small" /> : null}
+                </button>
+              ))}
+              <button
+                type="button"
+                title={formatMessage({ id: 'QuestionnaireSharePosterBackgroundUpload' })}
+                disabled={savingBackground || !!pendingBackground}
+                className={classnames(style['background-option'], style['background-upload'])}
+                onClick={() => backgroundInput.current?.click()}
+              >
+                {savingBackground && !pendingBackground ? <Spin size="small" /> : <PlusOutlined />}
+              </button>
             </div>
             <input ref={backgroundInput} className={style.file} type="file" accept={IMAGE_ACCEPT} onChange={onPickBackground} />
           </div>
