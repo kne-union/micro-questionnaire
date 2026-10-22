@@ -114,29 +114,47 @@
   gap: 6px;
 }
 
-.background {
+.background-list {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.background-thumb {
+.background-option {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 48px;
   height: 64px;
+  padding: 0;
+  border: 2px solid transparent;
   border-radius: 6px;
+  background-color: #f6f7f9;
   background-position: center;
   background-size: cover;
   background-repeat: no-repeat;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: border-color 0.2s;
+
+  &:hover:not(:disabled) {
+    border-color: rgba(65, 131, 240, 0.5);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+  }
 }
 
-.background-text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
+.background-active {
+  border-color: #4183f0;
+}
+
+.background-upload {
+  border-style: dashed;
+  border-color: #d9d9d9;
+  color: rgba(0, 0, 0, 0.45);
 }
 
 .poster-list {
