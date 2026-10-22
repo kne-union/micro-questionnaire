@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createWithRemoteLoader } from '@kne/remote-loader';
 import { Page, useIsMobile, useScrollElement } from '@kne/system-layout';
 import { App, Button, Skeleton } from 'antd';
-import { BarChartOutlined, FileTextOutlined, PlusOutlined, RightOutlined, SendOutlined } from '@ant-design/icons';
+import { BarChartOutlined, FileTextOutlined, GlobalOutlined, PlusOutlined, RightOutlined, SendOutlined } from '@ant-design/icons';
 import { useIntl } from '@kne/react-intl';
 import { useNavigate } from 'react-router-dom';
 import classnames from 'classnames';
@@ -11,6 +11,7 @@ import withQuestionnaireLocale from '@components/Questionnaire/withLocale';
 import { renderListCards } from '@components/Questionnaire/listCards';
 import { ProjectCreateForm } from '@components/QuestionnaireProject';
 import useProjectActions from '@components/QuestionnaireProject/useProjectActions';
+import schemaLanguages, { normalizeTemplateLanguages } from '../../../commons/schemaLanguages';
 import style from './style.module.scss';
 
 const requestTotal = async (ajax, api, params) => {
@@ -205,7 +206,7 @@ const Home = createWithRemoteLoader({
               <div className={style.templates}>
                 {templates
                   ? templates.map(item => (
-                      <button key={item.id} type="button" className={style.template} onClick={() => openCreate({ templateId: item.id, templateName: item.name, name: item.name, description: item.description })}>
+                      <button key={item.id} type="button" className={style.template} onClick={() => openCreate({ templateId: item.id, templateName: item.name, name: item.name, description: item.description, languages: item.languages })}>
                         <span className={style.templateHead}>
                           <span className={style.templateIcon}>
                             <FileTextOutlined />
@@ -213,6 +214,13 @@ const Home = createWithRemoteLoader({
                           <span className={classnames(style.templateTag, item.builtinKey && style.templateTagBuiltin)}>{formatMessage({ id: item.builtinKey ? 'QuestionnaireTemplateDefault' : 'QuestionnaireTemplateCustom' })}</span>
                         </span>
                         <span className={style.templateName}>{item.name}</span>
+                        <span className={style.templateLanguages}>
+                          <GlobalOutlined />
+                          {schemaLanguages
+                            .filter(language => normalizeTemplateLanguages(item.languages).includes(language.value))
+                            .map(language => formatMessage({ id: language.labelId }))
+                            .join(' / ')}
+                        </span>
                         <span className={style.templateDesc}>{item.description || formatMessage({ id: 'ClientHomeTemplateNoDescription' })}</span>
                         <span className={style.templateAction}>
                           {formatMessage({ id: 'ClientHomeUseTemplate' })}
